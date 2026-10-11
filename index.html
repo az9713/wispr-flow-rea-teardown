@@ -39,7 +39,39 @@ th{background:#16213a;color:var(--text)}
 <li><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/flowlite/flowlite.py" style="color:var(--acc2)">flowlite/flowlite.py</a>: hold F9, speak, release; text is pasted into the focused app.</li>
 <li><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/flowlite/receipts" style="color:var(--acc2)">flowlite/receipts/</a>: end-to-end test scripts, log, and <a href="flowlite/receipts/target.png" style="color:var(--acc2)">screenshot</a>.</li>
 <li><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/tools" style="color:var(--acc2)">tools/</a>: ASAR extractor and offset search used for the teardown.</li>
+<li><a href="#run" style="color:var(--acc2)">How to run flowlite</a>: steps and limits.</li>
 </ul></div>
+
+<h2 id="run">How to run flowlite</h2>
+<p>flowlite runs on Windows with Python 3. It was tested with Python 3.13.5.</p>
+<ol>
+<li>Get the code:<pre>git clone https://github.com/az9713/wispr-flow-rea-teardown
+cd wispr-flow-rea-teardown\flowlite</pre></li>
+<li>Install the libraries:<pre>pip install faster-whisper sounddevice keyboard pyperclip numpy</pre></li>
+<li>Optional: run the self-test. It transcribes the test file and pastes nothing:<pre>python flowlite.py --test test.wav</pre>The correct output is: <code>Let's meet at 6 p.m. on Thursday to review the quarterly report.</code></li>
+<li>Start flowlite. A normal PowerShell window is enough; you do not need administrator.<pre>python flowlite.py</pre></li>
+<li>Wait for <code>Ready. Hold F9 and speak. Ctrl+C to quit.</code> The speech model loads before this line appears. On the first run, the <code>base.en</code> model downloads.</li>
+<li>Click into the app where you want the text, such as Notepad, a browser text box or chat.</li>
+<li>Hold <b>F9</b>, speak, then release <b>F9</b>.</li>
+<li>The text is pasted at the cursor, with one space after it. The console also prints a line like <code>3.2s audio, 0.85s ASR: '...'</code>.</li>
+<li>To stop flowlite, click the console window and press <b>Ctrl+C</b>.</li>
+</ol>
+
+<h3>What to expect</h3>
+<ul>
+<li><b>Model and speed:</b> flowlite uses the <code>base.en</code> model on an NVIDIA GPU with CUDA (<code>float16</code>). If CUDA fails, it prints <code>CUDA failed (...); using CPU</code> and runs on the CPU (<code>int8</code>), which is slower. In the recorded test, 5.1 s of audio took 0.85 s to transcribe on a laptop GPU with 4096 MiB.</li>
+<li><b>Language:</b> <code>base.en</code> understands English only.</li>
+<li><b>Short presses:</b> a press shorter than 0.25 s is ignored.</li>
+</ul>
+
+<h3>Limits</h3>
+<ul>
+<li><b>F9 also reaches the app.</b> flowlite does not block the key. If an app uses F9 for something, that action also happens.</li>
+<li><b>The clipboard is changed for a short time.</b> flowlite copies the text, presses Ctrl+V, waits 0.15 s, then puts the old clipboard text back. If the clipboard held an image or formatted text, that content is lost. A slow app can paste the old clipboard instead of the new text.</li>
+<li><b>Administrator windows:</b> flowlite cannot paste into an app that runs as administrator unless the console also runs as administrator.</li>
+<li><b>Microphone:</b> flowlite records from the Windows default input device. To use a headset mic, set it as the default in Windows Settings &gt; System &gt; Sound &gt; Input.</li>
+<li><b>Not yet tested with a live voice.</b> All passing tests fed a recorded WAV directly into the program. Two tests that played speech from the speakers into the laptop mic both gave empty text (<code>''</code>). If you also get empty text, speak closer to the mic or use a headset mic.</li>
+</ul>
 </main>
 </body>
 </html>
