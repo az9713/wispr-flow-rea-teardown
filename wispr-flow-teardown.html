@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Wispr Flow Teardown</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--text2:#cbd5e1;--muted:#94a3b8;--acc:#fb923c;--acc2:#2dd4bf;--b1:#1e293b;--b2:#334155;--ok:#4ade80;--warn:#facc15;--bad:#f87171}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:960px;margin:0 auto;padding:32px 16px 80px}
+h1{font-size:1.9rem;margin:0 0 4px}
+h2{color:var(--acc);margin:40px 0 12px;font-size:1.35rem;border-bottom:1px solid var(--b2);padding-bottom:6px}
+h3{color:var(--acc2);margin:24px 0 8px;font-size:1.08rem}
+p,li{color:var(--text2)}
+.muted{color:var(--muted);font-size:.92rem}
+code{background:#0b1222;border:1px solid var(--b2);border-radius:4px;padding:1px 5px;font-size:.88em;word-break:break-word}
+pre{background:#0b1222;border:1px solid var(--b2);border-radius:8px;padding:12px;overflow-x:auto;font-size:.85rem;color:var(--text2)}
+.card{background:var(--card);border:1px solid var(--b2);border-radius:10px;padding:16px 18px;margin:14px 0}
+table{width:100%;border-collapse:collapse;font-size:.92rem;margin:10px 0}
+th,td{border:1px solid var(--b2);padding:7px 9px;text-align:left;vertical-align:top}
+th{background:#16213a;color:var(--text)}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:999px;padding:1px 8px;margin-right:4px}
+.p{background:#14532d;color:var(--ok)} .i{background:#713f12;color:var(--warn)} .h{background:#7f1d1d;color:var(--bad)}
+.flow{display:grid;gap:8px}
+.step{background:var(--card);border:1px solid var(--b2);border-left:4px solid var(--acc2);border-radius:8px;padding:10px 14px}
+.step b{color:var(--text)}
+.wrap{overflow-x:auto}
+</style>
+</head>
+<body>
+<main>
+<h1>Wispr Flow 1.6.1102 — how it works on Windows</h1>
+<p class="muted">Static analysis of the installed app files, 2026-10-11. Target: <code>C:\Users\simon\AppData\Local\WisprFlow\app-1.6.1102\</code>. Background: wisprflow.ai home page and wisprflow.ai/privacy. No part of the app was run.</p>
+
+<div class="card">
+<p><span class="tag p">PROVEN</span> I saw it in the shipped files. <span class="tag i">INFERRED</span> The names or structure point to it, but I did not see the code do it. <span class="tag h">HIDDEN</span> The answer is on Wispr's servers or in parts I could not open.</p>
+<p>Secrets: the app bundle contains an API key literal for the inference host, a Supabase anonymous token, a PostHog key, and a Sentry DSN. This report names them but does not copy their values.</p>
+</div>
+
+<h2>1. Where the app is and what I inspected</h2>
+<p>Wispr Flow is <b>not</b> in your Desktop folder. Your Desktop (<code>C:\Users\simon\Desktop</code>, plus the OneDrive Desktop) has no Wispr file or shortcut. The app is installed by Squirrel at <code>C:\Users\simon\AppData\Local\WisprFlow\</code>, with three versions: <code>app-1.4.303</code>, <code>app-1.4.338</code>, <code>app-1.6.1102</code>. I analyzed 1.6.1102, the newest. User data is in <code>C:\Users\simon\AppData\Roaming\Wispr Flow\</code> (not opened). The folder <code>Downloads\REA_whispr_flow_eric_tech\</code> holds only a <code>README.txt</code> with this prompt and a YouTube link; I did not watch the video.</p>
+<table>
+<tr><th>Part</th><th>What it is</th><th>Size</th></tr>
+<tr><td><code>Wispr Flow.exe</code></td><td>Electron shell</td><td>235,430,936 B</td></tr>
+<tr><td><code>resources\app.asar</code></td><td>All JavaScript: <code>.webpack/main/index.js</code> (9,771,276 B main process) and renderer windows <code>hub</code>, <code>status</code>, <code>overlay</code>, <code>scratchpad</code>, <code>meeting_recorder</code> and others. 902 entries, no <code>node_modules</code> folder (everything is bundled).</td><td>133,651,466 B</td></tr>
+<tr><td><code>resources\Release\Wispr Flow Helper.exe</code></td><td>Native Windows helper. .NET compiled ahead of time (NativeAOT): it has <code>System.Private.CoreLib</code> and <code>Wispr Flow Helper.dll</code> strings but no CLR header. Signed by <code>CN="Wispr AI, Inc."</code>, San Francisco.</td><td>20,228,632 B</td></tr>
+<tr><td><code>resources\migrations\*.js</code></td><td>~190 SQLite schema migrations for the local <code>flow.sqlite</code> history database</td><td>small</td></tr>
+<tr><td><code>resources\ax-inspect*.mjs</code></td><td>Developer tools that render saved accessibility (AX) context of past dictations from <code>flow.sqlite</code> into HTML</td><td>~104 KB</td></tr>
+<tr><td><code>app.asar.unpacked\...\jabra-device-connector</code>, <code>node_sqlite3.node</code>, <code>crypt32-x64.node</code></td><td>Headset buttons (Jabra), local database, Windows certificate store</td><td>—</td></tr>
+</table>
+
+<h3>How REA was used, and where it failed</h3>
+<p>Both REA MCP calls failed. <code>analyze_javascript_application</code> on the 133 MB ASAR sent no progress for 3,385 s and <code>inspect_managed_artifact</code> on the helper sent none for 3,666 s; Claude Code then stopped them on its MCP idle timeout. This is a harness limit (the MCP idle timeout), not a model error. <code>inspect_managed_artifact</code> was also the wrong tool: the helper has no CLR header, so it is not a managed PE.</p>
+<p>The results below come from three sources: (1) I extracted the ASAR with a small Node script and read the bundles directly; (2) I scanned the helper's ASCII and UTF-16 strings; (3) I ran the REA CLI on the 22 extracted main-process bundles (result in section 6).</p>
+
+<h2>2. The pipeline, step by step</h2>
+<div class="flow">
+<div class="step"><b>A. Hotkey.</b> The helper owns the global shortcut. <span class="tag p">PROVEN</span> main sends <code>UpdateShortcuts</code>, <code>DictationStart</code>, <code>DictationStop</code> to the helper; the helper contains <code>SetWindowsHookExW</code> and <code>LowLevelKeyboardProc</code> (a low-level keyboard hook) and sends <code>KeypressEvent{eventType,key,index,inputType}</code> back. Feature flags <code>windows-default-shortcut</code> and <code>windows-caps-lock-shortcut</code> exist. <span class="tag h">HIDDEN</span> the default key combination is not a constant I found.</div>
+<div class="step"><b>B. Microphone.</b> <span class="tag p">PROVEN</span> The <code>hub</code> renderer window calls <code>navigator.mediaDevices.getUserMedia</code>, builds an <code>AudioContext</code> at <code>sampleRate: 16000</code> (<code>hub@744855</code>), and loads <code>dist/recorderWorklet.js</code>. That AudioWorklet buffers 640 samples per message (40 ms at 16 kHz); <code>handleRecorderWorkletMessage</code> (<code>hub@747338</code>) receives them.</div>
+<div class="step"><b>C. Encode.</b> <span class="tag p">PROVEN</span> The renderer encodes with WebCodecs <code>AudioEncoder</code>, config <code>{codec:"opus", sampleRate:16000, numberOfChannels:1, bitrate:64000}</code>, 20 ms packets. If Opus is not supported, it sends WAV (float → Int16 PCM). Each packet goes to the main process over Electron IPC channel <code>dictation:audioChunk</code>; the end goes over <code>dictation:recordingDone</code>. Silent chunks before the first real audio are dropped.</div>
+<div class="step"><b>D. Context capture.</b> <span class="tag p">PROVEN</span> For each dictation, the app collects: app name, bundle id, URL, app type; the focused text box (<code>contents</code>, <code>before_text</code>, <code>selected_text</code>, <code>after_text</code>) through the helper's <code>GetTextBoxInfo</code>; words read from the screen through accessibility (<code>screenContentAx</code>) and through OCR (<code>screenContentOcr</code>); VS Code variable names and file names; nearby text and an accessibility HTML snapshot (<code>contentHtml</code>). The helper contains <code>IUIAutomation</code>, <code>IUIAutomationTextPattern</code>, <code>IUIAutomationValuePattern</code>, <code>IUIAutomationLegacyIAccessiblePattern</code>. <span class="tag h">HIDDEN</span> which OCR engine runs on Windows (no <code>Windows.Media.Ocr</code> string found).</div>
+<div class="step"><b>E. Stream to the server.</b> <span class="tag p">PROVEN</span> The main process opens a bidirectional gRPC stream <code>flow_api.v1.TranscriptionService/TranscribeStream</code> (protobuf-ts over <code>@grpc/grpc-js</code>, TLS). Each <code>Request</code> carries some of: <code>init</code> (metadata + preferences), <code>context</code>, <code>payload</code> (Opus or WAV packets, max 18,000 per message), <code>commit</code>. Headers: <code>authorization: Bearer &lt;user token&gt;</code>, <code>baseten-authorization: Api-Key &lt;embedded key&gt;</code>, <code>baseten-model-id</code>, <code>x-baseten-environment</code>, <code>disable-formatting</code>. Keepalive pings and a heartbeat timeout run during the stream.</div>
+<div class="step"><b>F. Get text back.</b> <span class="tag p">PROVEN</span> The server streams <code>State</code> messages (<code>raw_text</code>, <code>formatted_text</code>, progress of transcriber and formatter, <code>candidate_beams</code>, <code>audio_snr</code>, <code>audio_volume</code>) and a final <code>Result</code> (<code>output.plaintext</code>, <code>output.html</code>, languages, confidence, <code>response_time</code>, <code>transcript_origin</code>, <code>format_skip_reason</code>). If the heartbeat times out or gRPC fails, main sends the whole recording in one <b>unary gRPC</b> call <code>Transcribe</code> (the code calls it the "Baseten HTTP fallback") and uses whichever answer arrives first.</div>
+<div class="step"><b>G. Insert text.</b> <span class="tag p">PROVEN</span> main reads the clipboard (<code>clipboard.readText()</code>) and saves it, then sends <code>PasteText{text, htmlText?, pasteId, captureKeystrokeTrace?}</code> to the helper. The helper replies <code>PasteOutcome{pasteId, success, timeElapsedMs}</code> or <code>PasteBlocked{reason}</code>, and later <code>DictatedTextVerification{pasteId, verdict, reason, focusedElementContents}</code>. The helper contains <code>PasteViaClipboard</code>, <code>ClipboardSnapshot</code>, <code>ClipboardRestore</code>, <code>ClipboardRestorePolicy</code>, <code>SetClipboardData</code>, <code>HTML Format</code>, <code>SendInput</code>, <code>ShiftInsert</code>. <span class="tag i">INFERRED</span> order: snapshot clipboard → write text (and HTML) → send Ctrl+V or Shift+Insert with <code>SendInput</code> → read the field back with UI Automation → restore the old clipboard. <span class="tag h">HIDDEN</span> which key combination is used per app, the timing, and when restore is skipped (a flag <code>disable-clipboard-restore</code> exists).</div>
+<div class="step"><b>H. Learn from edits.</b> <span class="tag p">PROVEN</span> After the paste, the helper watches the field (<code>UpdateEditedText</code>, <code>contentObservationEndLastKeystroke</code>) and the app stores edit distance and correction counts in <code>flow.sqlite</code> (migrations <code>20260409120000-add-correction-counts-to-history.js</code>, <code>20260717120000-add-history-edit-distance.js</code>).</div>
+</div>
+
+<h3>Servers named in the code</h3>
+<table>
+<tr><th>Host</th><th>Role</th><th>Status</th></tr>
+<tr><td><code>inference.wisprflow.com</code></td><td>Default gRPC dictation target</td><td><span class="tag p">PROVEN</span></td></tr>
+<tr><td><code>model-v31pl413.grpc.api.baseten.co</code></td><td>Same service hosted on Baseten (model id <code>v31pl413</code>)</td><td><span class="tag p">PROVEN</span> in the allowlist</td></tr>
+<tr><td><code>wispr-ai-prod--prod-grpc-server-flowgrpcserver.us-east.modal.direct</code></td><td>Same service hosted on Modal</td><td><span class="tag p">PROVEN</span> in the allowlist</td></tr>
+<tr><td><code>https://inference-info.wisprflow.com/dictation_url.txt</code></td><td>Remote switch: the app fetches it and changes target only to one of the three hosts above</td><td><span class="tag p">PROVEN</span></td></tr>
+<tr><td><code>api.wisprflow.ai</code>, <code>api-east.wisprflow.ai</code> (https and wss)</td><td>Account and app API; WebSocket constants exist</td><td><span class="tag i">INFERRED</span> not traced into dictation</td></tr>
+<tr><td><code>dodjkfqhwrzqjwkfnthl.supabase.co</code>, <code>us.i.posthog.com</code>, <code>ph.wisprflow.ai</code>, Sentry</td><td>Backend data, product analytics, crash reports</td><td><span class="tag p">PROVEN</span> constants</td></tr>
+</table>
+
+<h2>3. Proven, inferred, hidden</h2>
+<h3><span class="tag p">PROVEN</span> from the app files</h3>
+<ul>
+<li>Speech recognition does not run on your PC. All 902 ASAR entries contain no model file: 0 matches for <code>onnx|ggml|gguf|tflite|.pt|.bin|whisper</code>. The only "model" match is <code>GNAudio.DeviceApis.ModelBase.dll</code> (Jabra headset library). The website agrees: "Transcription always happens in the cloud."</li>
+<li>Formatting (punctuation, filler removal, style) is server side. The response has separate <code>raw_text</code> and <code>formatted_text</code>, and timings <code>format</code>, <code>external_asr_time</code>, <code>external_llm_time</code>. The client only sends style settings: <code>WritingStyle</code> (FORMAL, CASUAL, VERY_CASUAL, EXCITED, GENZ), <code>EditingStrength</code> (VERBATIM, LIGHT, MEDIUM, HEAVY), dictionary, replacements, snippets.</li>
+<li>The server can use more than one recognizer. The <code>Origin</code> enum lists MIXTURE, WHISPER, SCRIBE, VOXTRAL, QWEN; <code>transcript_origin</code> accepts <code>internal</code>, <code>external</code>, <code>canto_1.0</code>, <code>canto_1.0.1</code>, <code>canto_1.1</code>.</li>
+<li>Screen context goes to the server: text-box text before and after the cursor, selected text, accessibility words, OCR words, VS Code names, nearby text, AX HTML. The website calls this "Reads limited text from the app you're dictating into."</li>
+<li>The <code>Context.screenshot</code> field exists in the protocol, but <code>getContext()</code> sets it to an empty <code>Uint8Array</code> in this build. So 1.6.1102 does not send screenshot pixels in this field.</li>
+<li>Your first name, last name and email go in every <code>Init.preferences.user</code>.</li>
+<li>Local history <code>flow.sqlite</code> can keep <code>axText</code> and <code>axHtml</code> (the accessibility text of the target app) per dictation (migrations <code>20250113230038-add-axtext.js</code>, <code>20250218194609-add-ax-html.js</code>). The <code>ax-inspect-server.mjs</code> comment says its pages "render local Slack/email content".</li>
+</ul>
+<h3><span class="tag i">INFERRED</span> from names and structure</h3>
+<ul>
+<li>"SCRIBE" may be ElevenLabs Scribe and "VOXTRAL" may be Mistral Voxtral. Only the names support this.</li>
+<li>"canto" is the in-house model name (the code also links <code>https://wisprflow.ai/canto</code>).</li>
+<li>The paste order in step G.</li>
+<li>The helper string <code>rustc</code> suggests a Rust component inside the helper. I did not confirm it.</li>
+</ul>
+<h3><span class="tag h">HIDDEN</span> (on the server or not opened)</h3>
+<ul>
+<li>Which ASR models and LLMs run, how they are chosen, the prompts, and how context is used.</li>
+<li>What the server stores. The privacy page says audio "is deleted as soon as it's transcribed, unless you've turned on Dictation cloud storage." The code cannot prove this.</li>
+<li>The helper's internal logic: key combination, timing, retry and restore rules. It is 20 MB of NativeAOT machine code; it needs a Ghidra pass to read.</li>
+<li>The default hotkey and the OCR engine on Windows.</li>
+</ul>
+
+<h2>4. A small version you can build</h2>
+<p>This copies the proven mechanism in its smallest form: one Python file, one hotkey, one recognizer, the clipboard, and a Ctrl+V keystroke. It skips context, streaming and verification.</p>
+<table>
+<tr><th>Wispr part</th><th>Small version</th></tr>
+<tr><td>Helper keyboard hook</td><td><code>keyboard</code> package (hold F9 to talk)</td></tr>
+<tr><td>getUserMedia 16 kHz mono</td><td><code>sounddevice</code>, 16 kHz, mono, int16</td></tr>
+<tr><td>gRPC stream to cloud ASR</td><td><b>Local:</b> <code>faster-whisper</code> on your CUDA GPU (you already use it in the intake pipeline). <b>Cloud option:</b> any speech-to-text API that takes a WAV file.</td></tr>
+<tr><td>Server formatter</td><td>Optional: one LLM call with "clean up this dictation, keep meaning". Off by default.</td></tr>
+<tr><td>Helper PasteText</td><td><code>pyperclip</code> save → set text → <code>keyboard.send("ctrl+v")</code> → wait → restore</td></tr>
+</table>
+<pre>
+# flowlite.py - hold F9, speak, release: text is pasted into the focused app.
+# pip install faster-whisper sounddevice numpy keyboard pyperclip
+import time, numpy as np, sounddevice as sd, keyboard, pyperclip
+from faster_whisper import WhisperModel
+
+RATE, KEY = 16000, "f9"
+model = WhisperModel("base.en", device="cuda", compute_type="float16")  # ponytail: "cpu"/"int8" if no GPU
+
+def record():
+    chunks = []
+    with sd.InputStream(samplerate=RATE, channels=1, dtype="float32",
+                        callback=lambda d, *_: chunks.append(d.copy())):
+        while keyboard.is_pressed(KEY):
+            time.sleep(0.02)
+    return np.concatenate(chunks)[:, 0] if chunks else np.zeros(0, np.float32)
+
+def paste(text):
+    old = pyperclip.paste()
+    pyperclip.copy(text)
+    keyboard.send("ctrl+v")
+    time.sleep(0.15)          # ponytail: fixed delay; slow apps may paste the old clipboard
+    pyperclip.copy(old)       # ponytail: text only; images/HTML on the clipboard are lost
+
+while True:
+    keyboard.wait(KEY)
+    audio = record()
+    if len(audio) &lt; RATE // 4:
+        continue              # under 0.25 s: ignore taps
+    segs, _ = model.transcribe(audio, vad_filter=True)
+    text = " ".join(s.text.strip() for s in segs).strip()
+    if text:
+        paste(text + " ")
+</pre>
+<h3>Services it needs</h3>
+<ul>
+<li><b>Local route:</b> none. Your NVIDIA GPU with CUDA and the <code>base.en</code> model (~150 MB download on first run).</li>
+<li><b>Cloud route:</b> one speech-to-text API key. Replace the <code>model.transcribe</code> line with an HTTP POST of the WAV.</li>
+<li><b>Optional cleanup:</b> one LLM API key and a short prompt.</li>
+</ul>
+<h3>Known limits of this version</h3>
+<ul>
+<li>Clipboard race: if the target app reads the clipboard after 150 ms, it pastes your old clipboard. Wispr verifies the field with UI Automation; this version does not.</li>
+<li>Restore keeps only text. Wispr snapshots all formats.</li>
+<li>No streaming: you wait for the full recording to transcribe. I did not measure latency on this machine.</li>
+<li>No context (no dictionary, no screen words), so names and jargon are less accurate.</li>
+<li>Elevated (admin) windows ignore keystrokes from a normal-level process.</li>
+</ul>
+<p>Next steps, in order: (1) add a dictionary as faster-whisper <code>initial_prompt</code>; (2) add the LLM cleanup; (3) read the focused text box with <code>uiautomation</code> to verify the paste.</p>
+
+<h2>5. Not done</h2>
+<ul>
+<li>Helper decompile: not done. The helper is NativeAOT; reading its paste logic needs a Ghidra pass on 20 MB of machine code. The REA MCP calls already timed out on smaller work.</li>
+<li>Renderer bundles: I scanned <code>hub</code> for audio code but did not run REA on the renderer windows.</li>
+<li>Runtime check: I did not run the app or capture its network traffic, so nothing here is observed at runtime.</li>
+<li>The YouTube video in <code>README.txt</code>: not watched.</li>
+</ul>
+
+<h2>6. REA CLI result</h2>
+<p>Command: <code>npx -y rea-agents@6.3.0 analyze-javascript-application &lt;22 extracted main bundles + package.json&gt; --json</code>. It finished with exit 0 in about 7 minutes and wrote a 505,348,651-byte Evidence file.</p>
+<ul>
+<li>Evidence ID: <code>ev_caa9799415d6a1d4bb802cb454813ff0c86184024019966bd09b79f7a4fe718b</code></li>
+<li>Coverage: <b>partial</b> (graph and semantic graph). 21 JavaScript files parsed, 0 parse failures, 3,497,416 AST nodes visited, 819 findings.</li>
+<li>Electron summary: 11 <code>BrowserWindow</code> constructions, 3 utility processes (0 entrypoints resolved), 0 preload entrypoints, 0 native addon bindings resolved.</li>
+<li>IPC: 166 main-process handlers, 155 with literal channels, 11 with dynamic channel expressions. Renderer side: 0, because I gave REA only the main bundles.</li>
+<li>Semantic relations: 91,213 kept, 178,512 unknowns. Families: call-flow 4,651, data-flow 36,410, closure 44,551, event 111, timer 25, child-process 0, request 0.</li>
+</ul>
+<p>Limit: the graph does not keep string values. The strings <code>dictation:audioChunk</code>, <code>Wispr Flow Helper.exe</code> and <code>inference.wisprflow.com</code> each have 0 matches in the Evidence file. REA also found 0 child-process and 0 request relations, but its own limitations say "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence." So the helper launch (<code>spawn</code>) and the gRPC hosts in sections 2–3 come from my direct reading of the bundle text, not from REA.</p>
+
+<h2>Evidence locations</h2>
+<p class="muted">Offsets are character positions in the extracted files under <code>scratchpad\asar_out\.webpack\</code>.</p>
+<div class="wrap"><table>
+<tr><th>Claim</th><th>File @ offset</th></tr>
+<tr><td>Recorder worklet, 640-sample chunks</td><td><code>renderer/dist/recorderWorklet.js</code></td></tr>
+<tr><td>16 kHz, Opus 64 kbps config</td><td><code>renderer/hub/index.js@665196</code></td></tr>
+<tr><td>Dictation audio graph</td><td><code>renderer/hub/index.js@744855</code></td></tr>
+<tr><td>Opus encoder → <code>dictation:audioChunk</code></td><td><code>renderer/hub/index.js@758524</code>, channel name <code>main/index.js@2692782</code></td></tr>
+<tr><td>Endpoint constants</td><td><code>main/index.js@2632015</code></td></tr>
+<tr><td>Dictation host allowlist, <code>dictation_url.txt</code></td><td><code>main/index.js@3589039</code></td></tr>
+<tr><td><code>TranscriptionService</code> definition</td><td><code>main/index.js@3692633</code></td></tr>
+<tr><td>gRPC client, headers, context, fallback</td><td><code>main/index.js</code> 3,694,000–3,740,000</td></tr>
+<tr><td>Helper spawn (stdio pipes, fd 3 IPC)</td><td><code>main/index.js@4435889</code></td></tr>
+<tr><td>Clipboard save + <code>PasteText</code></td><td><code>main/index.js@4465164</code></td></tr>
+<tr><td>Helper JSON schema (<code>PasteTextPayload</code>, <code>TextBoxInfoPayload</code>)</td><td><code>main/index.js</code> ~2,492,000</td></tr>
+</table></div>
+</main>
+</body>
+</html>
