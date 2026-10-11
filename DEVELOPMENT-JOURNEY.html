@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>flowlite Development Journey</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--text2:#cbd5e1;--muted:#94a3b8;--acc:#fb923c;--acc2:#2dd4bf;--b1:#1e293b;--b2:#334155;--ok:#4ade80;--warn:#facc15;--bad:#f87171}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:960px;margin:0 auto;padding:32px 16px 80px}
+h1{font-size:1.9rem;margin:0 0 4px}
+h2{color:var(--acc);margin:40px 0 12px;font-size:1.35rem;border-bottom:1px solid var(--b2);padding-bottom:6px}
+h3{color:var(--acc2);margin:24px 0 8px;font-size:1.08rem}
+p,li{color:var(--text2)}
+.muted{color:var(--muted);font-size:.92rem}
+code{background:#0b1222;border:1px solid var(--b2);border-radius:4px;padding:1px 5px;font-size:.88em;word-break:break-word}
+pre{background:#0b1222;border:1px solid var(--b2);border-radius:8px;padding:12px;overflow-x:auto;font-size:.85rem;color:var(--text2)}
+.card{background:var(--card);border:1px solid var(--b2);border-radius:10px;padding:16px 18px;margin:14px 0}
+table{width:100%;border-collapse:collapse;font-size:.92rem;margin:10px 0}
+th,td{border:1px solid var(--b2);padding:7px 9px;text-align:left;vertical-align:top}
+th{background:#16213a;color:var(--text)}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:999px;padding:1px 8px;margin-right:4px}
+.p{background:#14532d;color:var(--ok)} .i{background:#713f12;color:var(--warn)} .h{background:#7f1d1d;color:var(--bad)}
+.flow{display:grid;gap:8px}
+.step{background:var(--card);border:1px solid var(--b2);border-left:4px solid var(--acc2);border-radius:8px;padding:10px 14px}
+.step b{color:var(--text)}
+.wrap{overflow-x:auto}
+</style>
+<style>blockquote{border-left:3px solid var(--acc);margin:12px 0;padding:4px 14px;color:var(--muted)} a{color:var(--acc2)} hr{border:0;border-top:1px solid var(--b2);margin:28px 0} table{display:block;overflow-x:auto}</style>
+</head>
+<body>
+<main>
+<p class="muted"><a href="index.html">← Index</a></p>
+<h1>Development Journey — "flowlite": reverse engineering Wispr Flow with REA, then rebuilding it</h1>
+<p><strong>Date:</strong> 2026-10-11
+<strong>Deliverables:</strong>
+- Teardown report: <code>C:\Users\simon\Downloads\REA_whispr_flow_eric_tech\wispr-flow-teardown.html</code>
+- Rebuild: <code>C:\Users\simon\Downloads\REA_whispr_flow_eric_tech\flowlite\flowlite.py</code> (64 lines)
+- Test receipts: <code>C:\Users\simon\Downloads\REA_whispr_flow_eric_tech\flowlite\receipts\</code> (<code>target.png</code>, <code>flowlite_injected.log</code>, <code>driver.py</code>, <code>target.py</code>, <code>flowlite_injected.py</code>) and the test file <code>flowlite\test.wav</code>
+- Extraction scripts: <code>C:\Users\simon\Downloads\REA_whispr_flow_eric_tech\tools\asar.js</code>, <code>tools\ctx.js</code></p>
+<p><strong>Brief (verbatim, pasted text):</strong></p>
+<blockquote>
+<p>1 Find Wispr Flow in my Desktop folder. Use REA to inspect the app. Use its official website as background.
+2 Trace how it captures speech, gets transcription results, and inserts text into other apps.
+3 Explain what you can prove from the app files, what you infer, and what remains hidden.
+4 Then propose a small working version I could build, including any services it would need.</p>
+</blockquote>
+<p><strong>Follow-up prompts (verbatim):</strong> "Did you finish the whispr rebuild" → "Rebuild it" → "Test it yourself providing receipts" → "write a development journey explaining how you rebuild Whisperflow using RIA. How does RIA reverse engineer Whisperflow? Give all the details."</p>
+<p>I read "RIA" as REA (the <code>rea-agents</code> reverse-engineering tool and MCP server) and "Whisperflow" as Wispr Flow. The dictated words have no other match in this session.</p>
+<hr />
+<h2>0. The short, honest answer to "How does REA reverse engineer Wispr Flow?"</h2>
+<p>REA did less of this work than the brief implies. The record is:</p>
+<ul>
+<li>I called REA through MCP two times. <strong>Both calls failed.</strong> Claude Code stopped them because the MCP server sent no progress for 3,385 s and 3,666 s.</li>
+<li>I then ran REA as a command-line tool on part of the app. <strong>That run worked.</strong> It built a static graph of the Electron main process: 11 <code>BrowserWindow</code> constructions, 166 IPC handlers, 3 utility processes, and 91,213 semantic relations. Its coverage was "partial".</li>
+<li>The REA graph keeps <strong>no string values</strong>. So it could not show the server hostnames, the gRPC service, the IPC channel names, or the helper's file name. Those facts, which the rebuild depends on, came from my own scripts. The scripts extracted the ASAR and searched the minified bundle text.</li>
+</ul>
+<p>So the rebuild's facts come from three sources: (1) REA's structural map of the main process, (2) my direct reading of the bundles, and (3) string scans of the native helper. Section 4 explains what REA does by design, then shows exactly which facts each source gave.</p>
+<hr />
+<h2>1. The brief — what was actually being asked</h2>
+<p>The brief has four parts: locate, trace, classify the evidence, and propose. Two parts carried hidden risk:</p>
+<ul>
+<li>"Find Wispr Flow in my Desktop folder." The app was not there. I had to find it, and the report had to say plainly that it was not on the Desktop.</li>
+<li>"Propose a small working version." This asked for a proposal, not a build. In the first phase I wrote a code sketch into the report and did not build it. When Simon asked "Did you finish the whispr rebuild", the correct answer was "No". He then asked me to build it and to test it with receipts.</li>
+</ul>
+<h2>2. Starting context and invisible constraints</h2>
+<p><strong>Environment at minute zero.</strong> Windows 11 Home 10.0.26300; PowerShell 5.1 and Git Bash; working directory <code>C:\Users\simon\Downloads\REA</code> (not a git repo); model Claude Opus 5.5 (<code>claude-opus-5-5</code>). The REA MCP tools (<code>mcp__rea__*</code>) were deferred, so I loaded them with <code>ToolSearch</code> before the first call. Some MCP servers had failed to connect at session start (<code>kb</code>, <code>anthropic-financial-services</code>, <code>mtnewswire</code>, <code>paper</code>). None of them was needed.</p>
+<p><strong>Rules that shaped the output.</strong> A reader cannot see these, so I list them:
+- <code>~/.claude/CLAUDE.md</code>: write in ASD-STE100 Simplified Technical English; plain language with no technical content removed; precise phrasing, no rhetoric; HTML output in dark mode (<code>bg #0f172a</code>, card <code>#1e293b</code>, accents <code>#fb923c</code> / <code>#2dd4bf</code>); "Never kill a process by name"; "Finish, or say what you left"; "Find the path before you read it".
+- <code>AGENTS.md</code>: customer-facing docs in HTML, internal docs in Markdown. This journey is an internal doc, so it is Markdown.
+- The <strong>Ponytail</strong> hook was active at level "full": do the smallest thing that works. It made the rebuild one file with no new abstractions.
+- <strong>Focus mode</strong> was on, so Simon sees only my final message each turn. Every report therefore had to stand alone.
+- A <strong>coach-nudge</strong> hook fired at about 204k, 233k and 274k context tokens. It asked me to repeat its text and to suggest <code>handoff-after-clear</code> then <code>/clear</code>.
+- Skills invoked: <code>reverse-engineer-anything</code> (the REA skill) at the start, and <code>dev-journey</code> for this document.</p>
+<p><strong>What I reused instead of working out again.</strong> The memory index <code>MEMORY.md</code> already held "REA JS graph limits — no string values in graph; export bundle when over MCP budget". That note predicted exactly the gap that made REA's graph unable to show hostnames. A second note, "AV blocks Bash curl", is why I never used curl. I also found the folder <code>C:\Users\simon\Downloads\REA_whispr_flow_eric_tech\</code>, which held only <code>README.txt</code> with this prompt and the YouTube link <code>https://www.youtube.com/watch?v=FnB9tHKBJXQ</code>. I made that folder the output location. I did not watch the video.</p>
+<h2>3. Finding the app</h2>
+<ol>
+<li><code>Get-ChildItem</code> on <code>$env:USERPROFILE\Desktop</code> and the OneDrive Desktop, filtered on <code>wispr|flow</code>, returned exit code 1 with no output.</li>
+<li><code>[Environment]::GetFolderPath('Desktop')</code> returned <code>C:\Users\simon\OneDrive\Email attachments\Desktop</code>, an unusual redirected path. That folder held only <code>desktop.ini</code>. <code>C:\Users\simon\Desktop</code> held unrelated files (<code>sticky.html</code>, <code>disk_hog_summary.md</code>, and others).</li>
+<li>A search of <code>$env:LOCALAPPDATA</code>, <code>$env:APPDATA</code> and the Program Files folders found <code>C:\Users\simon\AppData\Local\WisprFlow</code> and <code>C:\Users\simon\AppData\Roaming\Wispr Flow</code>.</li>
+<li>The install is managed by the Squirrel updater (<code>Update.exe</code>, <code>Squirrel-*.log</code>). It has three versions: <code>app-1.4.303</code>, <code>app-1.4.338</code>, <code>app-1.6.1102</code>. I chose <strong>1.6.1102</strong>, the newest.</li>
+</ol>
+<p>Inventory of <code>app-1.6.1102</code>:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What it is</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Wispr Flow.exe</code></td>
+<td>Electron shell</td>
+<td>235,430,936 B</td>
+</tr>
+<tr>
+<td><code>resources\app.asar</code></td>
+<td>All JavaScript, bundled by webpack</td>
+<td>133,651,466 B</td>
+</tr>
+<tr>
+<td><code>resources\Release\Wispr Flow Helper.exe</code></td>
+<td>Native Windows helper</td>
+<td>20,228,632 B</td>
+</tr>
+<tr>
+<td><code>resources\migrations\*.js</code></td>
+<td>About 190 Sequelize migrations for <code>flow.sqlite</code></td>
+<td>small</td>
+</tr>
+<tr>
+<td><code>resources\ax-inspect.mjs</code>, <code>ax-inspect-server.mjs</code>, <code>ax-inspect-lib.mjs</code></td>
+<td>Developer tools that show saved accessibility context of past dictations</td>
+<td>3,806 / 5,314 / 94,717 B</td>
+</tr>
+<tr>
+<td><code>app.asar.unpacked\.webpack\main\native_modules\...</code></td>
+<td><code>node_sqlite3.node</code>, <code>crypt32-x64.node</code>, and a .NET <code>jabra-device-connector</code> for headset buttons</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2>4. How REA works, and what it actually did on Wispr Flow</h2>
+<h3>4.1 What REA is designed to do</h3>
+<p>REA is a reverse-engineering toolkit. Agents use it through an MCP server (<code>mcp__rea__*</code>) or a CLI (<code>npx -y rea-agents@6.3.0 ...</code>). The <code>reverse-engineer-anything</code> skill says to choose the first tool from the target type:</p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>First REA tool</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ASAR or extracted Electron/JavaScript tree</td>
+<td><code>analyze_javascript_application</code></td>
+</tr>
+<tr>
+<td>Managed .NET PE/CLI assembly</td>
+<td><code>inspect_managed_artifact</code></td>
+</tr>
+<tr>
+<td>.NET NativeAOT or other native executable</td>
+<td><code>open_binary</code> with a native provider (Ghidra, Hopper, or IDA), then <code>analyze_function</code>, <code>procedure_pseudo_code</code>, <code>search_strings</code></td>
+</tr>
+<tr>
+<td>A running Electron app</td>
+<td><code>list_electron_targets</code>, <code>capture_electron_scenario</code></td>
+</tr>
+<tr>
+<td>Big results</td>
+<td><code>inspect_analysis_view</code> for pages, <code>export_evidence_bundle</code> for the full record</td>
+</tr>
+</tbody>
+</table>
+<p>For a JavaScript app, <code>analyze_javascript_application</code> does these things:
+1. It opens the ASAR, reads its JSON header, and lists every file. It records each file's SHA-256 and checks integrity. With <code>integrity_policy: "record-and-continue"</code>, a mismatch is recorded and marked untrusted instead of stopping the run.
+2. It parses each JavaScript file into an abstract syntax tree (AST) as inert text. <strong>It never runs the code.</strong> It recovers webpack module factories from AST literals.
+3. It builds a <strong>JavaScript Application Graph</strong>: nodes for assets, modules and functions, and edges between them. It summarizes the Electron boundaries: <code>BrowserWindow</code> constructions, <code>webPreferences</code>, preload scripts, <code>contextBridge</code> APIs, IPC handlers and senders, utility processes, and native addon bindings.
+4. It builds a <strong>semantic relation graph</strong> with relation families: boundary, call-flow, child-process, closure, configuration, data-flow, event, object-flow, promise-ownership, request, resource-lifecycle, timer.
+5. It wraps everything in an <strong>Evidence record</strong>: an <code>evidence_id</code>, the subject's SHA-256, the provider, coverage status, <code>limitations</code>, and <code>unknowns</code>. A missing relation is reported as unknown, not as absent.</p>
+<p>For a native binary, REA starts a disassembler provider and gives function lists, pseudocode, cross-references and string searches. For a running app, it can attach to the app and observe it passively. I did not use the runtime path.</p>
+<h3>4.2 What happened when REA was pointed at Wispr Flow</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Call</th>
+<th>Target</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>MCP <code>analyze_javascript_application</code> (<code>integrity_policy: "record-and-continue"</code>)</td>
+<td><code>resources\app.asar</code>, 133,651,466 B</td>
+<td>Moved to the background after 120 s (task <code>kkwqpotnj</code>). Later: <strong>"Task failed: MCP server "rea" tool "analyze_javascript_application" sent no response or progress for 3385s; aborting."</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td>MCP <code>inspect_managed_artifact</code></td>
+<td><code>Release\Wispr Flow Helper.exe</code></td>
+<td>Background task <code>k2djhofii</code>. Later: <strong>"... sent no response or progress for 3666s; aborting."</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td>CLI <code>npx -y rea-agents@6.3.0 analyze-javascript-application &lt;dir&gt; --json</code></td>
+<td>A folder with only <code>package.json</code> and the 22 files in <code>.webpack/main/*.js</code></td>
+<td><strong>Success.</strong> Exit 0, 09:47 → 09:54 (about 7 minutes), output 505,348,651 B</td>
+</tr>
+</tbody>
+</table>
+<p>Calls 1 and 2 were stopped by the harness: Claude Code's MCP idle timeout ended them. They were not model errors. Call 2 was also the wrong tool, as section 6 shows. The helper has no CLR header, so it is not a managed assembly.</p>
+<p>For call 3, I reduced the target to the 22 main-process bundles so the run could finish. I ran it as a background shell job with a 1,500 s <code>timeout</code>, with stdout going to <code>main_graph.json</code> and progress going to <code>main_graph.err</code>. The progress lines showed the phases: <code>parse_javascript_source</code> file by file (1/22 … 22/22), then "Constructing application and Electron boundary relationships", "Sealing the validated application graph", "Binding and validating static semantic relationships", "Hashing the complete application analysis Evidence", and finally <code>"terminal":true</code>.</p>
+<p><strong>What REA's CLI returned:</strong>
+- Evidence ID: <code>ev_caa9799415d6a1d4bb802cb454813ff0c86184024019966bd09b79f7a4fe718b</code>
+- Coverage: <code>partial</code> (not truncated)
+- Statistics: 22 relevant files, 21 JavaScript files parsed, 0 parse failures, 14,127,816 text bytes read, 3,497,416 AST nodes visited, 819 findings
+- Electron summary: 11 <code>browser_windows</code>, 2 <code>explicit_web_preferences</code>, 0 <code>preload_entrypoints</code>, 0 <code>context_bridge_apis</code>, 3 <code>utility_processes</code> (0 entrypoints resolved), 0 <code>native_addon_bindings</code>, 1 <code>sender_validation_observations</code>
+- IPC: 166 operations, all of them <code>main_handlers</code>; 155 with literal channels, 11 with dynamic channel expressions; 0 renderer transmissions, because I gave REA no renderer code
+- Semantic graph: 91,213 relations kept, 178,512 unknowns. By family: call-flow 4,651; data-flow 36,410; closure 44,551; object-flow 4,979; promise-ownership 373; event 111; boundary 108; timer 25; configuration 5; child-process 0; request 0; resource-lifecycle 0
+- Limitations, quoted from REA: "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence." / "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed." / "Dynamic IPC channel expressions remain unresolved and are never paired by textual similarity."</p>
+<p><strong>The near-miss inside the result.</strong> REA found 0 child-process relations and 0 request relations. A careless reader would conclude "Wispr does not start a helper process and makes no network requests". That is false: section 5 shows <code>spawn(...)</code> of the helper and a gRPC client. REA's own limitation note is the guard here. A zero in a partial graph means "not resolved", not "not present".</p>
+<p><strong>The string gap.</strong> I searched the 505 MB Evidence file for <code>dictation:audioChunk</code>, <code>dictation:recordingDone</code>, <code>Wispr Flow Helper.exe</code> and <code>inference.wisprflow.com</code>. Each had 0 matches. This confirms the existing memory note: the REA graph keeps no string values.</p>
+<h3>4.3 Which facts came from where</h3>
+<table>
+<thead>
+<tr>
+<th>Fact used by the rebuild</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Main process has 11 windows, 166 IPC handlers, 3 utility processes</td>
+<td>REA CLI</td>
+</tr>
+<tr>
+<td>Mic capture at 16 kHz, 640-sample AudioWorklet chunks</td>
+<td>My extraction plus <code>ctx.js</code> on <code>renderer/hub/index.js</code></td>
+</tr>
+<tr>
+<td>Opus 16 kHz mono 64 kbps, 20 ms packets, IPC <code>dictation:audioChunk</code></td>
+<td><code>ctx.js</code></td>
+</tr>
+<tr>
+<td>gRPC <code>flow_api.v1.TranscriptionService/TranscribeStream</code> and its message schemas</td>
+<td>A Node dump of <code>super("flow_api.v1.*")</code> in <code>main/index.js</code></td>
+</tr>
+<tr>
+<td>Server allowlist and <code>dictation_url.txt</code></td>
+<td><code>main/index.js@3589039</code></td>
+</tr>
+<tr>
+<td>Helper launch through <code>spawn</code> with stdio pipes and fd 3</td>
+<td><code>main/index.js@4435889</code></td>
+</tr>
+<tr>
+<td><code>PasteText{text, htmlText?, pasteId, captureKeystrokeTrace?}</code></td>
+<td>quicktype schema strings in <code>main/index.js</code></td>
+</tr>
+<tr>
+<td>Helper uses <code>SendInput</code>, <code>SetClipboardData</code>, <code>HTML Format</code>, <code>SetWindowsHookExW</code>, UI Automation</td>
+<td>A PowerShell ASCII/UTF-16 string scan of the helper</td>
+</tr>
+<tr>
+<td>No local ASR model</td>
+<td>0 matches in the ASAR file list for <code>onnx|ggml|gguf|tflite|.pt|.bin|whisper</code></td>
+</tr>
+</tbody>
+</table>
+<p>Rule learned: <strong>REA gives the shape of the app; the strings give its meaning. For a minified Electron app you need both.</strong></p>
+<h2>5. The core problem: tracing three hops through 9.7 MB of minified code</h2>
+<p>The main bundle <code>.webpack/main/index.js</code> is 9,771,276 B and is mostly a few very long lines. Ordinary line tools fail on it.</p>
+<h3>5.1 Getting at the code</h3>
+<ul>
+<li><strong>ASAR extraction.</strong> I wrote <code>tools/asar.js</code> (10 lines, Node standard library only). It reads the 16-byte prefix, the header length at offset 12, and the JSON header at offset 16. It walks <code>files</code>, prints every entry (902 in total), and copies out entries that match a regex. File data starts at <code>8 + headerSize + offset</code>. The listing showed <strong>no <code>node_modules</code> folder</strong>, so everything is bundled. The renderer windows are <code>hub</code>, <code>status</code>, <code>overlay</code>, <code>scratchpad</code>, <code>meeting_recorder</code>, <code>feature_tour</code>, <code>accessibility_drop</code>, <code>meeting_ax_inspector</code> and <code>contextMenu</code>.</li>
+<li><strong>Search.</strong> My first loop, <code>grep -oiE</code> over the bundles, ran past the 120 s limit and went to the background (task <code>bpp4fxkoo</code>). The Grep tool gave only per-line counts, so every file reported "1". I then wrote <code>tools/ctx.js</code> (5 lines). It runs a regex over the whole file and prints each hit with its <strong>character offset</strong> and N characters of context. Every offset in the report (for example <code>hub@744855</code>) comes from this script.</li>
+</ul>
+<h3>5.2 Hop 1 — microphone to main process</h3>
+<ol>
+<li><code>getUserMedia|AudioWorklet</code> matched mostly enum strings, such as <code>GetUserMediaError="media:getUserMediaError"</code>. <code>hub</code> had 83 matches, which pointed to the <code>hub</code> window.</li>
+<li>In <code>hub@665196</code> I found the constants <code>tf=40, nf=16e3, af={codec:"opus",sampleRate:nf,numberOfChannels:1,bitrate:64e3}</code> and <code>lf="../dist/recorderWorklet.js"</code>.</li>
+<li>I extracted <code>renderer/dist/recorderWorklet.js</code> (1,650 B). <code>RecorderProcessor</code> has <code>chunkSize=640</code>, handles the messages <code>"start"</code> and <code>"stop"</code>, and posts Float32 buffers.</li>
+<li><strong>Near-miss 1.</strong> The first worklet <code>onmessage</code> I found, at <code>hub@3223941</code>, converts audio to base64 PCM and sends <code>ExtensionAudioChunk</code>. That is the <strong>extension</strong> audio path, not dictation. The dictation handler is <code>mf.recorderNode.port.onmessage</code> (<code>hub@743112</code>), which calls <code>handleRecorderWorkletMessage</code> (<code>hub@747338</code>).</li>
+<li><strong>Near-miss 2.</strong> The advisor pointed out that the <code>VB-Audio Virtual Cable</code> echo-cancellation retry at <code>hub@685034</code> is in the <strong>meeting-recorder</strong> setup, not in dictation. I removed it from the dictation steps of the report.</li>
+<li><strong>Near-miss 3.</strong> I almost credited <code>bitrate:64e3</code> to dictation from its position next to meeting code. I checked it: <code>hub@758524</code> builds the dictation encoder with <code>new AudioEncoder({...})</code> and configures it with <code>af</code>. Each output packet goes to <code>(0,Oe.$)(S.kH.AudioChunk,…{duration:20, encoding:"opus"…})</code>. The enum maps <code>AudioChunk="dictation:audioChunk"</code> and <code>RecordingDone="dictation:recordingDone"</code> (<code>main@2692782</code>). <strong>Hop 1 is proven from end to end.</strong></li>
+</ol>
+<h3>5.3 Hop 2 — main process to the transcription server</h3>
+<ol>
+<li>Endpoint constants at <code>main@2632015</code>: <code>https://api.wisprflow.ai</code>, <code>https://api-east.wisprflow.ai</code>, <code>wss://api.wisprflow.ai/</code>, <code>wss://api-east.wisprflow.ai/</code>, <code>ws://127.0.0.1:8300/</code>, a Supabase URL with an anonymous JWT, a PostHog key, a Sentry DSN, and two Baseten values: a model id <code>v31pl413</code> and an API key literal. <strong>I do not copy the key values in any document.</strong></li>
+<li><code>main@3589039</code> holds an allowlist: <code>inference.wisprflow.com</code> (the default), <code>model-v31pl413.grpc.api.baseten.co</code>, and <code>wispr-ai-prod--prod-grpc-server-flowgrpcserver.us-east.modal.direct</code>. The app fetches <code>https://inference-info.wisprflow.com/dictation_url.txt</code> with an 8 s timeout. It switches only to a host in that set; otherwise it logs "Dictation URL provider returned a target outside the allowlist, ignoring".</li>
+<li>I looked for gRPC services with <code>ServiceType\(</code>, which found nothing. Then <code>serverStreaming:</code> found <code>("flow_api.v1.TranscriptionService",[{name:"Transcribe"…},{name:"TranscribeStream",serverStreaming:!0,clientStreaming:!0…}])</code> at <code>main@3692633</code>. The client is protobuf-ts over <code>@grpc/grpc-js</code>.</li>
+<li>Schema dump: a Node one-liner matched <code>super("(flow_api\.v1\.[A-Za-z.]+)",[</code> and printed each field list. It gave about 30 messages: <code>Request{init, context, payload, commit}</code>, <code>Init{metadata, preferences, state}</code>, <code>Context{app, textbox, vocabulary, user_identifier, content_text, content_html, session_dictation_apps, screenshot, conversation}</code>, <code>AudioPackets{items: bytes, 1..18000}</code>, <code>State{progress, raw_text, formatted_text, confidence, candidate_beams, audio_snr, audio_volume, …}</code>, <code>Result{output, audio_duration, response_time, transcript_origin ∈ {"", internal, external, internal_experimental, canto_1.0, canto_1.0.1, canto_1.1}, format_skip_reason, …}</code>, <code>Response{result, state, all_states, heartbeat}</code>.</li>
+<li>Enums. My first attempt used a regex that assumed <code>AUDIO_ENCODING_</code> prefixes. It produced 55.3 KB of unrelated enums (ASN.1 tags, HTTP methods, gRPC status codes). The fix was to slice the 40,000 characters after <code>flow_api.v1.Version</code> and list every <code>e[e.X=n]</code>. That gave: platforms <code>MACOS WIN32 IOS ANDROID WEB API</code>; app types <code>BROWSER PERSONAL_MESSAGING WORK_MESSAGING EMAIL CHATBOT DEVELOPER</code>; encodings <code>WAV=1 OPUS=2</code>; styles <code>FORMAL CASUAL VERY_CASUAL EXCITED GENZ</code>; editing strengths <code>VERBATIM LIGHT MEDIUM HEAVY</code>; origins <code>MIXTURE WHISPER SCRIBE VOXTRAL QWEN</code>; commit <code>TRUE FALSE</code>; result status <code>FORMATTED ERROR RAW_TRANSCRIPT</code>.</li>
+<li>Client behavior. I wrote characters 3,694,000–3,740,000 of the bundle to <code>grpc_client.txt</code>, with each <code>;</code> replaced by a newline, and searched that file:</li>
+<li>The <code>getRpcOptions</code> headers are <code>authorization: Bearer &lt;user token&gt;</code>, <code>baseten-authorization: Api-Key &lt;embedded&gt;</code>, <code>baseten-model-id</code>, <code>x-baseten-environment</code>, <code>flow-debug</code> and <code>disable-formatting</code>.</li>
+<li><code>getContext()</code> sends the textbox before/selected/after text, accessibility words, OCR words, VS Code variable and file names, nearby text, AX HTML, and <strong><code>screenshot:new Uint8Array</code>, which is empty</strong>.</li>
+<li>If the heartbeat times out, the app starts a parallel <strong>unary gRPC <code>Transcribe</code></strong> call (the code calls it the "Baseten HTTP fallback"). The first answer wins (<code>raceWinner</code>).</li>
+</ol>
+<h3>5.4 Hop 3 — main process to the target app</h3>
+<ol>
+<li><code>main@4435889</code> chooses <code>${resources}\Release\Wispr Flow Helper.exe</code> and starts it with <code>spawn(s,{stdio:["pipe","pipe","pipe","pipe"]})</code>. Requests go to the helper on stdin. Replies come back on <strong>fd 3</strong>: <code>ee.on("data", e=&gt;pushData(...))</code>.</li>
+<li>I counted <code>sendHelperRequest)("X"</code> calls: <code>CancelPaste DictationStart DictationStop SimulateKeyPress(13) UpdateShortcuts(6) StartAccessibilityServices SetFocusMode …</code>. There was no PasteText among them. PasteText is sent through a different wrapper, <code>y("PasteText",…)</code>, at <code>main@4465164</code>. Just before that call, main runs <code>r.clipboard.readText()</code> and logs "Saved clipboard contents before paste".</li>
+<li>The payload schemas are quicktype-generated objects such as <code>PasteTextPayload:L([…captureKeystrokeTrace?, htmlText?, pasteId, text])</code>, <code>PasteOutcomePayload{pasteId, success, timeElapsedMs}</code> and <code>TextBoxInfoPayload{accessibilityIsFunctioning, afterText, beforeText, contents, couldNotGetTextBoxInfo, focusedElementHash, isEditable, selectedText}</code>. Getting there took four broken attempts: a bash-escaped <code>RegExp</code> failed with "SyntaxError: Invalid regular expression: … Unterminated group", then "Unterminated character class", and a slice bug printed only "P". The final version simply printed the 900 characters after a literal <code>indexOf</code>.</li>
+<li>A PowerShell scan of the helper (ASCII plus two UTF-16 alignments) found <code>PasteViaClipboard</code>, <code>ClipboardSnapshot</code>, <code>ClipboardRestore</code>, <code>ClipboardRestorePolicy</code>, <code>SetClipboardData</code>, <code>HTML Format</code>, <code>SendInput</code>, <code>ShiftInsert</code>, <code>SetWindowsHookExW</code>, <code>LowLevelKeyboardProc</code>, <code>IUIAutomationTextPattern</code>, <code>IUIAutomationValuePattern</code>, <code>IUIAutomationLegacyIAccessiblePattern</code>, and <code>PasteTextHandler</code>.</li>
+</ol>
+<h2>6. Classifying the helper (a failed side-quest)</h2>
+<ul>
+<li>The first marker probe found <code>BSJB: True</code>, <code>System.Private.CoreLib: True</code>, <code>mscoree.dll: False</code>, <code>rustc: True</code>, <code>SendInput: True</code>.</li>
+<li>I found the .NET single-file bundle signature (<code>8b1202b96a612038…</code>) at offset 11,270,120. I wrote <code>bundle.js</code> to parse the manifest. It crashed: "RangeError [ERR_OUT_OF_RANGE]: The value of "offset" is out of range. … Received 576_460_745_995_190_300". The 8 bytes before the signature were <code>feffff87feffff07</code>, which is code, not a header offset.</li>
+<li>The PE section table shows <code>.text .rdata .data .pdata .rsrc .reloc</code> and a CLR header directory of <code>0 0</code>. <strong>There is no managed header, so this is NativeAOT.</strong> The signature is an embedded constant, not a bundle. I dropped <code>bundle.js</code>.</li>
+<li>Rule learned: <strong>check the CLR header directory first; "System.Private.CoreLib" in the strings does not mean a managed PE.</strong></li>
+<li>I did not decompile the helper. It would need <code>open_binary</code> with Ghidra on 20 MB of machine code, and the REA MCP calls had already timed out on smaller work.</li>
+</ul>
+<h2>7. Design decisions</h2>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Chosen</th>
+<th>Rejected, and why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Version to analyze</td>
+<td>1.6.1102</td>
+<td>The 1.4.x versions are older and are kept only for Squirrel rollback</td>
+</tr>
+<tr>
+<td>REA target after the timeouts</td>
+<td>CLI on the 22 main bundles</td>
+<td>The full ASAR over MCP died twice; a renderer pass was skipped to finish in the session</td>
+</tr>
+<tr>
+<td>How to read minified code</td>
+<td>My own <code>asar.js</code> + <code>ctx.js</code></td>
+<td><code>npx @electron/asar</code> would add a download; grep is too slow on very long lines</td>
+</tr>
+<tr>
+<td>Report format</td>
+<td>Dark-mode HTML</td>
+<td>Required by the CLAUDE.md HTML rule; Markdown is used only for this internal doc</td>
+</tr>
+<tr>
+<td>Secrets</td>
+<td>Name them, never copy them</td>
+<td>Copying would spread live credentials</td>
+</tr>
+<tr>
+<td>Rebuild ASR</td>
+<td>Local <code>faster-whisper</code> <code>base.en</code> on CUDA</td>
+<td>A cloud API needs a key and costs money; Simon already runs faster-whisper; Wispr's own service is closed</td>
+</tr>
+<tr>
+<td>Hotkey library</td>
+<td><code>keyboard</code></td>
+<td><code>pynput</code> would be equal in size; <code>keyboard.is_pressed</code> makes hold-to-talk one line</td>
+</tr>
+<tr>
+<td>Text insertion</td>
+<td>Clipboard + Ctrl+V + restore, the same mechanism as Wispr</td>
+<td><code>SendInput</code> per character is slow and breaks on Unicode; UI Automation ValuePattern does not work in every app</td>
+</tr>
+<tr>
+<td>Scope cuts (Ponytail)</td>
+<td>No streaming, no context, no LLM cleanup, no paste check, no settings file</td>
+<td>Each cut is listed as a limit in the report</td>
+</tr>
+<tr>
+<td>Self-check</td>
+<td>One <code>--test &lt;wav&gt;</code> flag</td>
+<td>The Ponytail rule asks for exactly one runnable check</td>
+</tr>
+<tr>
+<td>End-to-end test</td>
+<td>Hold F9 with a synthetic key press, paste into a separate test app</td>
+<td>Pasting into Notepad risks Simon's open session tabs; my own test window can save its text to a file</td>
+</tr>
+</tbody>
+</table>
+<h2>8. The rebuild and its tests</h2>
+<h3>8.1 Building <code>flowlite.py</code></h3>
+<ul>
+<li>Probe: Python 3.13.5. <code>faster_whisper</code>, <code>sounddevice</code>, <code>numpy</code>, <code>pyperclip</code> and <code>ctranslate2</code> were already installed; <code>keyboard</code> was missing. <code>ctranslate2.get_cuda_device_count()</code> returned 1, and <code>nvidia-smi</code> showed "NVIDIA GeForce RTX 3050 Laptop GPU, 4096 MiB".</li>
+<li><code>python -m pip install keyboard</code>. This was the only package installed.</li>
+<li>The file has 64 lines: <code>load_model()</code> (CUDA float16, falling back to CPU int8), <code>transcribe()</code> (<code>vad_filter=True</code>), <code>record()</code> (16 kHz mono float32 <code>InputStream</code> while F9 is held), <code>paste()</code> (save clipboard → copy → <code>ctrl+v</code> → 0.15 s → restore), and <code>main()</code> with <code>--test</code>. Two <code>ponytail:</code> comments mark the known limits: the fixed delay and the text-only restore.</li>
+</ul>
+<h3>8.2 Self-test on a synthetic voice</h3>
+<ul>
+<li>Test audio: <code>System.Speech</code> SpeechSynthesizer at 16,000 Hz, 16-bit, mono → <code>test.wav</code>, 144,526 B, about 4.5 s, text "Let's meet at six PM on Thursday to review the quarterly report."</li>
+<li><strong>Failure:</strong> PowerShell variable names ignore case, so <code>$S</code> (the folder) and <code>$s</code> (the synthesizer) were one variable. Error: "Could not find a part of the path 'C:\Users\simon\Downloads\REA\System.Speech.Synthesis.SpeechSynthesizer\test.wav'". The fix was to rename the variables to <code>$dir</code> and <code>$syn</code>.</li>
+<li><code>python flowlite.py --test test.wav</code> → <code>Let's meet at 6 p.m. on Thursday to review the quarterly report.</code> Total time 20.2 s (first run), then 19.7 s.</li>
+<li><strong>Failure:</strong> my timing script used <code>python -I</code> and got "ModuleNotFoundError: No module named 'faster_whisper'". The <code>-I</code> flag hides user site-packages. I ran it again without <code>-I</code>; it is safe here because the code is my own. Measured result: device <code>cuda</code>, 16.4 s to import and load the model, ASR 0.63 s on the first call and 0.23 s on the second, for 4.5 s of audio.</li>
+<li>Separate checks: default input "Microphone Array (2- Intel® Sma"; a 0.5 s mic sample gave RMS 1.46e-05; <code>keyboard.is_pressed('f9')</code> returned False with no error; clipboard set and restore both gave True.</li>
+<li>I started the live app as background task <code>baxca8zzt</code>. Its output: "Ready. Hold F9 and speak. Ctrl+C to quit."</li>
+</ul>
+<h3>8.3 "Test it yourself providing receipts"</h3>
+<p><strong>Test setup:</strong> <code>target.py</code> is a topmost tkinter window titled <code>flowlite-e2e-target</code>. It saves its text to <code>target_text.txt</code> every 0.3 s. <code>driver.py</code> does the rest:
+1. Puts the marker <code>CLIPBOARD-SENTINEL-&lt;unix time&gt;</code> on the clipboard.
+2. Starts the target and stores its PID.
+3. Waits until <code>GetForegroundWindow</code> belongs to the target, using an Alt press and <code>SetForegroundWindow</code>. If the target never becomes the foreground window, it <strong>stops without pressing F9</strong>. This guard keeps a paste from landing in Simon's own window.
+4. Holds F9 through <code>keyboard.press</code>, plays the WAV, releases F9, and waits 6 s.
+5. Takes a screenshot of the target with <code>ImageGrab</code>, then reads the target's text and the clipboard.</p>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th>Audio path</th>
+<th>flowlite log</th>
+<th><code>target_text</code></th>
+<th>Clipboard restored</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Default output = "Headset Earphone (Plantronics B" → laptop mic</td>
+<td><code>4.9s audio, 0.13s ASR: ''</code></td>
+<td><code>""</code></td>
+<td>true</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Forced output "Speaker (3- Realtek(R) Audio)" (MME) → laptop mic</td>
+<td><code>5.5s audio, 0.01s ASR: ''</code></td>
+<td><code>""</code></td>
+<td>true</td>
+</tr>
+<tr>
+<td>3</td>
+<td>WAV fed in place of the mic by <code>flowlite_injected.py</code></td>
+<td><code>5.1s audio, 0.85s ASR: "Let's meet at 6 p.m. on Thursday to review the quarterly report."</code></td>
+<td><code>"Let's meet at 6 p.m. on Thursday to review the quarterly report. "</code></td>
+<td>true</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Diagnosis of runs 1–2.</strong> The first run played the speech into the headset, where the laptop mic could not hear it. For the second run I used <code>sd.playrec</code> on the Realtek speaker and the Intel mic. The mic got RMS 1.72e-04 and peak 7.08e-03, about 12 times the 1.46e-05 silence level, but still too quiet to transcribe. Whisper returned <code>''</code> with VAD and <code>''</code> without VAD. After I scaled the audio to full level, it returned "Let's be that welcome.", which is wrong text. So raising the gain in software does not fix this; the problem is in the sound path. I did not read or change the Windows volume settings.</p>
+<p><strong>Run 3 design.</strong> <code>flowlite_injected.py</code> imports the unchanged <code>flowlite</code> module and makes one swap: <code>flowlite.sd.InputStream = FakeStream</code>. FakeStream feeds the WAV in 640-sample blocks every 40 ms, which is real time, then silence. Before run 3 I stopped the live task with <code>TaskStop baxca8zzt</code>, so two copies would not both paste. The driver starts the injected flowlite as a subprocess, waits for "Ready.", and at the end kills it <strong>by its own captured PID</strong> (44868). The CLAUDE.md rule forbids killing by name.</p>
+<p><strong>Receipts saved:</strong> <code>flowlite/receipts/target.png</code> (the screenshot shows the sentence in the <code>flowlite-e2e-target</code> window), <code>flowlite_injected.log</code>, and the three test scripts. A check after the test showed PIDs 44868, 1792, 25916 and 56228 all "gone".</p>
+<h2>9. Tools used in this session</h2>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it did here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Skill</code></td>
+<td>Loaded <code>reverse-engineer-anything</code> and <code>dev-journey</code></td>
+</tr>
+<tr>
+<td><code>ToolSearch</code></td>
+<td>Loaded the REA MCP schemas, <code>WebFetch</code> and <code>TaskStop</code></td>
+</tr>
+<tr>
+<td><code>mcp__rea__analyze_javascript_application</code></td>
+<td>Full ASAR; died on the idle timeout after 3,385 s</td>
+</tr>
+<tr>
+<td><code>mcp__rea__inspect_managed_artifact</code></td>
+<td>Helper; died on the idle timeout after 3,666 s; the target is NativeAOT, so the tool did not apply</td>
+</tr>
+<tr>
+<td>REA CLI <code>rea-agents@6.3.0</code></td>
+<td>Main-process graph, Evidence <code>ev_caa97994…</code>, 505 MB JSON</td>
+</tr>
+<tr>
+<td><code>WebFetch</code></td>
+<td><code>https://wisprflow.ai</code> (claims: "4x faster than your keyboard", works "anywhere you can type") and <code>https://wisprflow.ai/privacy</code> ("Transcription always happens in the cloud", "Reads limited text from the app you're dictating into")</td>
+</tr>
+<tr>
+<td>Bash + Node</td>
+<td><code>asar.js</code>, <code>ctx.js</code>, schema and enum dumps, <code>bundle.js</code> (failed)</td>
+</tr>
+<tr>
+<td>PowerShell</td>
+<td>Install discovery, helper string scan, PE section table, TTS WAV, timing, cleanup checks</td>
+</tr>
+<tr>
+<td><code>Read</code></td>
+<td><code>ax-inspect.mjs</code>, <code>ax-inspect-server.mjs</code>, the screenshot receipt</td>
+</tr>
+<tr>
+<td><code>Write</code> / <code>Edit</code></td>
+<td>Report HTML, <code>flowlite.py</code>, memory file, this journey</td>
+</tr>
+<tr>
+<td><code>advisor</code></td>
+<td>Two consultations (section 10)</td>
+</tr>
+<tr>
+<td><code>TaskStop</code></td>
+<td>Stopped the live flowlite task <code>baxca8zzt</code> by task ID</td>
+</tr>
+</tbody>
+</table>
+<h2>10. Agents and AI machinery</h2>
+<p>The whole session ran on Claude Opus 5.5 with no subagents; all work was inline. The advisor was called two times in the first phase:
+1. <strong>Before writing.</strong> It told me to: put the coach note first; redact the four secrets; say plainly that the app was not on the Desktop; call the REA failures a harness failure and cite the CLI Evidence; stop chasing the helper bundle; prove the renderer-to-main IPC hop; prove the absence of a local model with a bounded search. It also listed labelling traps: 64 kbps, "SCRIBE" meaning ElevenLabs is only a guess from the name, the paste order is inferred, the "HTTP fallback" is really unary gRPC, the empty screenshot, and the default hotkey is unknown. <strong>This changed the report.</strong> I added the IPC proof (<code>dictation:audioChunk</code>), the bounded model search, and the corrected labels.
+2. <strong>Before finishing.</strong> It caught the VB-Audio sentence, which is meeting code, and two unmeasured claims: "usually under 1 s", and "before and during dictation". <strong>I fixed all three.</strong></p>
+<h2>11. Human-in-the-loop moments</h2>
+<p>Simon wrote five prompts: the brief, "Did you finish the whispr rebuild", "Rebuild it", "Test it yourself providing receipts", and this request. He approved nothing interactively; permissions were in bypass mode. He did not do the live voice test, which is the one test that needs a person.</p>
+<h2>12. Costs and limits</h2>
+<ul>
+<li>No paid API calls. ASR ran locally; the WebFetch calls were free.</li>
+<li>Time: the two MCP timeouts used about 56–61 minutes of wall-clock in the background. The REA CLI took about 7 minutes. Model load takes 16.4 s on each start.</li>
+<li>Context: the coach hook reported about 204k, 233k and 274k tokens as the session grew. Its note says sessions like this one were about 49% of historical spend.</li>
+<li>Disk: about 505 MB of REA JSON plus the extracted ASAR, both in the session scratchpad, which is deleted with the session.</li>
+</ul>
+<h2>13. Verification summary</h2>
+<table>
+<thead>
+<tr>
+<th>Claim</th>
+<th>How it was checked</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The app is not on the Desktop</td>
+<td>Listings of three Desktop paths</td>
+</tr>
+<tr>
+<td>Every pipeline fact in the report</td>
+<td>A file and character offset, recorded in the report's evidence table</td>
+</tr>
+<tr>
+<td>No local ASR model</td>
+<td>0 matches in 902 ASAR entries; the only "model" hit is the Jabra <code>GNAudio.DeviceApis.ModelBase.dll</code></td>
+</tr>
+<tr>
+<td>REA graph numbers</td>
+<td>Read from <code>main_graph.json</code> with Node</td>
+</tr>
+<tr>
+<td>Rebuild transcribes correctly</td>
+<td><code>--test</code> output matches the TTS script</td>
+</tr>
+<tr>
+<td>Rebuild runs on the GPU</td>
+<td><code>m.model.device == cuda</code>, timings measured</td>
+</tr>
+<tr>
+<td>Full pipeline pastes into another app and restores the clipboard</td>
+<td>Run 3: target text file, screenshot, and clipboard marker before and after</td>
+</tr>
+<tr>
+<td>No processes left running</td>
+<td><code>Get-Process -Id</code> on each PID → "gone"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Not verified:</strong>
+- A real voice into the real microphone (runs 1–2 failed; see section 8.3).
+- The helper's paste key combination and timing (not decompiled).
+- Anything at runtime in Wispr Flow itself (the app was never run).
+- The <code>wss://</code> constants in the dictation path.
+- The Windows OCR engine.
+- The default hotkey.</p>
+<h2>14. Unfinished business</h2>
+<ol>
+<li><strong>Live voice test.</strong> Not done, because it needs a person to speak, and the speaker-to-mic path is too quiet (RMS 1.72e-04). To finish it, Simon runs <code>python flowlite.py</code>, holds F9, and speaks. If the log shows <code>''</code>, raise the mic level or use the Plantronics headset mic (flowlite would then need a <code>device=</code> argument). The rebuild works without this test; run 3 proves every stage except the acoustic one.</li>
+<li><strong>Helper decompile.</strong> Not done (20 MB NativeAOT; needs a Ghidra provider; MCP timeouts). It would show which key combination is used per app and when the clipboard restore is skipped.</li>
+<li><strong>REA on the renderer bundles.</strong> Not done. It would pair renderer senders with the 166 main handlers.</li>
+<li><strong>YouTube video in <code>README.txt</code>.</strong> Not watched.</li>
+<li><strong>Re-running the receipts.</strong> <code>driver.py</code> expects <code>flowlite\test.wav</code> (now in place) and these arguments: <code>python flowlite\receipts\driver.py &lt;receipts dir&gt; inject &lt;flowlite dir&gt;</code>. <code>driver.py</code> writes <code>target_text.txt</code>, <code>target.png</code> and <code>flowlite_injected.log</code> into the receipts folder, so a re-run overwrites the saved receipts. It also needs <code>target.py</code> and <code>flowlite_injected.py</code> in the same folder, which they are.</li>
+</ol>
+<h2>15. Knowledge captured</h2>
+<ul>
+<li>Memory: <code>C:\Users\simon\.claude\projects\C--Users-simon-Downloads-REA\memory\rea-mcp-timeout-large-asar.md</code>, with an index line in <code>MEMORY.md</code>. It records that REA MCP times out on a 133 MB ASAR, that the fix is to run the CLI on an extracted subset, and that a NativeAOT helper is not a managed PE.</li>
+<li>Report: <code>wispr-flow-teardown.html</code>, with proven, inferred and hidden labels, a server table, and an evidence-offset table.</li>
+<li>Scripts moved out of the scratchpad: <code>tools/asar.js</code>, <code>tools/ctx.js</code>, <code>flowlite/receipts/*</code>, <code>flowlite/test.wav</code>.</li>
+</ul>
+<p>Rules learned in this session:
+- "A zero in a partial REA graph means unresolved, not absent."
+- "REA gives the shape; the strings give the meaning."
+- "Check the CLR header before calling a .NET binary managed."
+- "PowerShell variable names ignore case: <code>$S</code> is <code>$s</code>."
+- "<code>python -I</code> hides user site-packages."
+- "Prove the acoustic path separately from the software path."</p>
+<h2>16. Where things stand</h2>
+<ul>
+<li>The teardown is complete for static analysis of 1.6.1102. Its proven, inferred and hidden labels are in the report.</li>
+<li><code>flowlite.py</code> works from end to end on injected audio, with receipts. It has not been tested with a live voice.</li>
+<li>Nothing is running.</li>
+<li>Published (at Simon's request) to the public repo <code>https://github.com/az9713/wispr-flow-rea-teardown</code>. Before the commit, I cropped <code>flowlite/receipts/target.png</code> to the test window only, because the first capture showed fragments of other windows. No secret values are in the repo; a search for the five embedded secret patterns found 0 files.</li>
+</ul>
+<p>Next steps (options):
+1. <strong>Live voice test.</strong> Run the live test and fix the mic path.
+2. <strong>Add context.</strong> Add a dictionary through faster-whisper's <code>initial_prompt</code>.
+3. <strong>Add cleanup.</strong> Add an optional LLM cleanup step.
+4. <strong>Check the paste.</strong> Add a UI Automation read-back, as Wispr's <code>DictatedTextVerification</code> does.
+5. <strong>Read the helper.</strong> Run a Ghidra pass on <code>Wispr Flow Helper.exe</code> to learn its paste rules.</p>
+</main>
+</body>
+</html>

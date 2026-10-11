@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Wispr Flow Teardown</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--text2:#cbd5e1;--muted:#94a3b8;--acc:#fb923c;--acc2:#2dd4bf;--b1:#1e293b;--b2:#334155;--ok:#4ade80;--warn:#facc15;--bad:#f87171}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:960px;margin:0 auto;padding:32px 16px 80px}
+h1{font-size:1.9rem;margin:0 0 4px}
+h2{color:var(--acc);margin:40px 0 12px;font-size:1.35rem;border-bottom:1px solid var(--b2);padding-bottom:6px}
+h3{color:var(--acc2);margin:24px 0 8px;font-size:1.08rem}
+p,li{color:var(--text2)}
+.muted{color:var(--muted);font-size:.92rem}
+code{background:#0b1222;border:1px solid var(--b2);border-radius:4px;padding:1px 5px;font-size:.88em;word-break:break-word}
+pre{background:#0b1222;border:1px solid var(--b2);border-radius:8px;padding:12px;overflow-x:auto;font-size:.85rem;color:var(--text2)}
+.card{background:var(--card);border:1px solid var(--b2);border-radius:10px;padding:16px 18px;margin:14px 0}
+table{width:100%;border-collapse:collapse;font-size:.92rem;margin:10px 0}
+th,td{border:1px solid var(--b2);padding:7px 9px;text-align:left;vertical-align:top}
+th{background:#16213a;color:var(--text)}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:999px;padding:1px 8px;margin-right:4px}
+.p{background:#14532d;color:var(--ok)} .i{background:#713f12;color:var(--warn)} .h{background:#7f1d1d;color:var(--bad)}
+.flow{display:grid;gap:8px}
+.step{background:var(--card);border:1px solid var(--b2);border-left:4px solid var(--acc2);border-radius:8px;padding:10px 14px}
+.step b{color:var(--text)}
+.wrap{overflow-x:auto}
+</style>
+</head>
+<body>
+<main>
+<h1>Wispr Flow, reverse engineered with REA</h1>
+<p class="muted">Static analysis of Wispr Flow 1.6.1102 on Windows, and flowlite: a small local rebuild. 2026-10-11.</p>
+<div class="card"><h3><a href="wispr-flow-teardown.html" style="color:var(--acc2)">Teardown report</a></h3><p>How Wispr Flow captures speech, gets transcription from its servers, and pastes text into other apps. Each claim is marked proven, inferred, or hidden.</p></div>
+<div class="card"><h3><a href="DEVELOPMENT-JOURNEY.html" style="color:var(--acc2)">Development journey</a></h3><p>The full session record: how REA was used and where it failed, every error, the rebuild, and the test receipts.</p></div>
+<div class="card"><h3>Code and receipts</h3><ul>
+<li><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/flowlite/flowlite.py" style="color:var(--acc2)">flowlite/flowlite.py</a>: hold F9, speak, release; text is pasted into the focused app.</li>
+<li><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/flowlite/receipts" style="color:var(--acc2)">flowlite/receipts/</a>: end-to-end test scripts, log, and <a href="flowlite/receipts/target.png" style="color:var(--acc2)">screenshot</a>.</li>
+<li><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/tools" style="color:var(--acc2)">tools/</a>: ASAR extractor and offset search used for the teardown.</li>
+</ul></div>
+</main>
+</body>
+</html>
