@@ -34,7 +34,7 @@ th{background:#16213a;color:var(--text)}
 <h1>Wispr Flow, reverse engineered with REA</h1>
 <p class="muted">Static analysis of Wispr Flow 1.6.1102 on Windows, and flowlite: a small local rebuild. 2026-10-11.</p>
 <p class="muted">Reference: the video <a href="https://www.youtube.com/watch?v=FnB9tHKBJXQ" style="color:var(--acc2)">“How To Use REA To Clone Any Software In Minutes”</a> by Eric Tech.</p>
-<div class="card"><h3><a href="wispr-flow-teardown.html" style="color:var(--acc2)">Teardown report</a></h3><p>How Wispr Flow captures speech, gets transcription from its servers, and pastes text into other apps. Each claim is marked proven, inferred, or hidden.</p></div>
+<div class="card"><h3><a href="wispr-flow-teardown.html" style="color:var(--acc2)">Teardown report</a></h3><p>How Wispr Flow captures speech, gets transcription from its servers, and pastes text into other apps. Each claim is marked proven, inferred, or hidden. <a href="wispr-flow-teardown.html#ghidra" style="color:var(--acc2)">Section 7</a> reads the helper's paste code with Ghidra.</p></div>
 <div class="card"><h3><a href="DEVELOPMENT-JOURNEY.html" style="color:var(--acc2)">Development journey</a></h3><p>The full session record: how REA was used and where it failed, every error, the rebuild, and the test receipts.</p></div>
 <div class="card"><h3>Code and receipts</h3><ul>
 <li><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/flowlite/flowlite.py" style="color:var(--acc2)">flowlite/flowlite.py</a>: hold F9, speak, release; text is pasted into the focused app.</li>
@@ -54,7 +54,7 @@ cd wispr-flow-rea-teardown\flowlite</pre></li>
 <li>Wait for <code>Ready. Hold F9 and speak. Ctrl+C to quit.</code> The speech model loads before this line appears. On the first run, the <code>base.en</code> model downloads.</li>
 <li>Click into the app where you want the text, such as Notepad, a browser text box or chat.</li>
 <li>Hold <b>F9</b>, speak, then release <b>F9</b>.</li>
-<li>The text is pasted at the cursor, with one space after it. The console also prints a line like <code>3.2s audio, 0.85s ASR: '...'</code>.</li>
+<li>The text is pasted at the cursor, with one space after it. The console also prints a line like <code>3.2s audio, 0.85s ASR, notepad -&gt; ctrl+v, restore 0.5s: '...'</code>.</li>
 <li>To stop flowlite, click the console window and press <b>Ctrl+C</b>.</li>
 </ol>
 
@@ -68,7 +68,8 @@ cd wispr-flow-rea-teardown\flowlite</pre></li>
 <h3>Limits</h3>
 <ul>
 <li><b>F9 also reaches the app.</b> flowlite does not block the key. If an app uses F9 for something, that action also happens.</li>
-<li><b>The clipboard is changed for a short time.</b> flowlite copies the text, presses Ctrl+V, waits 0.15 s, then puts the old clipboard text back. If the clipboard held an image or formatted text, that content is lost. A slow app can paste the old clipboard instead of the new text.</li>
+<li><b>Paste keys.</b> flowlite presses Ctrl+V. In VS Code, Cursor and Windsurf (process names <code>Code</code>, <code>Cursor</code>, <code>Windsurf</code>) it presses Shift+Insert, as Wispr's helper does when its <code>shift-insert</code> flag is on. If you hold Ctrl, Shift, Alt or Windows, flowlite waits up to 2 s for you to release it.</li>
+<li><b>The clipboard is changed for a short time.</b> flowlite copies the text and presses the paste keys. It puts the old clipboard text back after 0.5 s; after 3 s for Outlook, Word and WhatsApp; after 5 s for remote-desktop apps such as <code>mstsc</code> and AnyDesk. It does not restore if the clipboard changed meanwhile. If the clipboard held an image or formatted text, that content is lost. An app that reads the clipboard after the delay pastes the old clipboard.</li>
 <li><b>Administrator windows:</b> flowlite cannot paste into an app that runs as administrator unless the console also runs as administrator.</li>
 <li><b>Microphone:</b> flowlite records from the Windows default input device. To use a headset mic, set it as the default in Windows Settings &gt; System &gt; Sound &gt; Input.</li>
 <li><b>Not yet tested with a live voice.</b> All passing tests fed a recorded WAV directly into the program. Two tests that played speech from the speakers into the laptop mic both gave empty text (<code>''</code>). If you also get empty text, speak closer to the mic or use a headset mic.</li>

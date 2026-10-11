@@ -580,7 +580,46 @@ th{background:#16213a;color:var(--text)}
 2. <strong>Add context.</strong> Add a dictionary through faster-whisper's <code>initial_prompt</code>.
 3. <strong>Add cleanup.</strong> Add an optional LLM cleanup step.
 4. <strong>Check the paste.</strong> Add a UI Automation read-back, as Wispr's <code>DictatedTextVerification</code> does.
-5. <strong>Read the helper.</strong> Run a Ghidra pass on <code>Wispr Flow Helper.exe</code> to learn its paste rules.</p>
+5. <strong>Read the helper.</strong> Done in section 17.</p>
+<h2>17. Second pass: redoing the helper with Ghidra (2026-10-11)</h2>
+<p><strong>Why it happened.</strong> The user asked which REA engine read Wispr Flow: Hopper, IDA, or Ghidra. The answer was none. The JavaScript part needs no disassembler; REA reads it with <code>analyze_javascript_application</code>. The helper is machine code, and no disassembler was set up. <code>rea doctor</code> reported all three as <code>missing_analysis_engine</code>: Ghidra <code>GHIDRA_INSTALL_DIR is not set</code>, IDA <code>IDA MCP registration is not configured.</code>, Hopper not installed. The first report blamed the MCP timeouts only; the missing engine was the real blocker, and I had not checked it. The user then wrote "do all these steps and use Ghidra to redo the teardown and rebuild the app", and then "in short, redo everything with Gihdra".</p>
+
+<p><strong>Install.</strong></p>
+<ol>
+<li>Java was already present: <code>java version "23.0.2"</code>, with <code>javac</code>.</li>
+<li>Downloaded <code>ghidra_12.1.4_PUBLIC_20260921.zip</code>, 569,649,598 B. Its SHA-256 matched the release note: <code>ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db</code>.</li>
+<li>Unzipped with <code>C:\Windows\System32\tar.exe</code>. It printed many <code>Can't unlink already-existing object: Permission denied</code> lines. A Ghidra copy already existed at that path, and a Ghidra process from another session on 2026-10-10 still held its files open. My first search had missed that folder, because it looked only one level deep in the home folder. I compared the folder with the zip: 5,219 files, 0 missing, 0 size differences. I did not stop the old process, because I had not started it.</li>
+<li>Set the user environment variable <code>GHIDRA_INSTALL_DIR</code>. Claude Code's REA MCP server had started before that, so its tools still could not see Ghidra. A restart of Claude Code is needed for that.</li>
+</ol>
+
+<p><strong>Human-in-the-loop.</strong> The user rejected two tool calls: a GitHub release lookup, and a <code>rea providers</code> check. Then they asked "why doesn't Ghidra look into the binary". At that point Ghidra was installed but had not run. They answered "Go".</p>
+
+<p><strong>What went wrong, and the fixes.</strong></p>
+<ol>
+<li><strong>REA CLI time limit.</strong> <code>rea analyze ... --provider ghidra</code> failed after 340 s with <code>"code": "provider_timeout"</code>, <code>"operation": "list_documents"</code>, <code>"timeout_ms": 330000</code>. REA's README names the fix: <code>REA_GHIDRA_STARTUP_TIMEOUT_MS</code>.</li>
+<li><strong>One CLI call = one Ghidra import.</strong> REA's Ghidra database is temporary, and a <code>--snapshot</code> keeps only results. So each CLI query would import the 20 MB file again. Fix: <code>tools/rea_session.mjs</code> starts <code>rea --mcp</code> as a child process with the time limit set to 10,800,000 ms. It keeps one Ghidra session open and runs tool calls from a folder queue. This does not need a Claude Code restart, and Claude Code's MCP idle timeout does not apply to it.</li>
+<li><strong>Import time.</strong> <code>open_binary</code> returned in 0.2 s, but the first deep call, <code>binary_overview</code>, waited for Ghidra's analysis. Ghidra's log: <code>Total Time 1310 secs</code>, then <code>Analysis succeeded</code>.</li>
+<li><strong>Queue file escaping.</strong> The driver crashed on <code>SyntaxError: Bad escaped character in JSON at position 41</code>. <code>printf</code> had changed the backslashes in the Windows path. Fix: write queue files from Node, and catch bad files instead of crashing. The same error came back when Git Bash changed <code>\.</code> in a regex; fix: <code>[.]</code>.</li>
+<li><strong>No import names.</strong> <code>find_xrefs_to_name</code> returned <code>name_not_found</code> for <code>SendInput</code>, <code>SetClipboardData</code> and <code>SetWindowsHookExW</code>. References to the string addresses were empty too (<code>[]</code>). The fix: the code points at the .NET string <em>object</em>, which starts 12 bytes before the characters. References to <code>address - 12</code> found every function, for example <code>0x1403256d8</code> for "Pasted successfully using delayed clipboard manager".</li>
+<li><strong>Unicode output.</strong> <code>strs.py</code> failed with <code>UnicodeEncodeError: 'charmap' codec can't encode character '\u9810'</code> when a pointer was not a real string. Fix: keep only ASCII text.</li>
+<li><strong>Screenshot.</strong> The new end-to-end run captured fragments of another window again. I cropped <code>target.png</code> to the test window, 656 x 189 px.</li>
+</ol>
+
+<p><strong>What Ghidra showed.</strong> The helper's paste rules are in section 7 of the teardown: Ctrl+V, or Shift+Insert for <code>Code</code>/<code>Cursor</code>/<code>Windsurf</code> behind the flag <code>shift-insert</code>; key-downs, 50 ms, key-ups; a delayed-render clipboard that tells the helper when the app read the text; restore after 500 / 3,000 / 5,000 ms by app; no restore if the clipboard changed. 21 functions were read; their pseudocode and REA Evidence IDs are in <code>ghidra/</code>.</p>
+
+<p><strong>Rebuild.</strong> <code>flowlite/flowlite.py</code> now uses the same key choice per app, the 50 ms key timing, the 50 ms wait, the restore delay per app, and no restore when the clipboard changed. The restore runs on a <code>threading.Timer</code>, so it does not block the next dictation. Not copied: the delayed-render clipboard, <code>HTML Format</code>, the <code>{{TAB}}</code>/<code>{{BREAK}}</code> markers, and the format snapshot.</p>
+
+<p><strong>Verification.</strong></p>
+<ul>
+<li><code>python flowlite.py --selftest</code> printed <code>selftest ok</code>. This is the only check of the Shift+Insert branch and of the 3 s and 5 s delays.</li>
+<li><code>python flowlite.py --test test.wav</code> printed <code>Let's meet at 6 p.m. on Thursday to review the quarterly report.</code></li>
+<li><code>receipts/driver.py</code> in inject mode: <code>foreground_is_target: true</code>; target text <code>"Let's meet at 6 p.m. on Thursday to review the quarterly report. "</code>; <code>clipboard_restored: true</code>; flowlite log <code>5.1s audio, 0.92s ASR, python -&gt; ctrl+v, restore 0.5s</code>. The target is <code>python</code>, so this run tests the Ctrl+V branch only.</li>
+<li>Still not tested with a live voice.</li>
+</ul>
+
+<p><strong>Cleanup.</strong> I closed the Ghidra session with <code>close_binary</code> and saved a snapshot (796,889 B, 79 Evidence records). I stopped my driver by its task ID. Its REA server, PID 12868, and its Ghidra process ended. The Ghidra process from 2026-10-10 still runs; I did not start it, so I did not stop it.</p>
+
+<p>Rules learned: "Check that the engine exists before you blame the timeout." "A NativeAOT string reference points 12 bytes before the text."</p>
 </main>
 </body>
 </html>
