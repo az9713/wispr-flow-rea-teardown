@@ -36,10 +36,10 @@ th{background:#16213a;color:var(--text)}
 <h1>Development Journey — "flowlite": reverse engineering Wispr Flow with REA, then rebuilding it</h1>
 <p><strong>Date:</strong> 2026-10-11
 <strong>Deliverables:</strong>
-- Teardown report: <code>C:\Users\simon\Downloads\REA_whispr_flow_eric_tech\wispr-flow-teardown.html</code>
-- Rebuild: <code>C:\Users\simon\Downloads\REA_whispr_flow_eric_tech\flowlite\flowlite.py</code> (64 lines)
-- Test receipts: <code>C:\Users\simon\Downloads\REA_whispr_flow_eric_tech\flowlite\receipts\</code> (<code>target.png</code>, <code>flowlite_injected.log</code>, <code>driver.py</code>, <code>target.py</code>, <code>flowlite_injected.py</code>) and the test file <code>flowlite\test.wav</code>
-- Extraction scripts: <code>C:\Users\simon\Downloads\REA_whispr_flow_eric_tech\tools\asar.js</code>, <code>tools\ctx.js</code></p>
+- Teardown report: <code>wispr-flow-teardown.html</code>
+- Rebuild: <code>flowlite\flowlite.py</code> (64 lines)
+- Test receipts: <code>flowlite\receipts\</code> (<code>target.png</code>, <code>flowlite_injected.log</code>, <code>driver.py</code>, <code>target.py</code>, <code>flowlite_injected.py</code>) and the test file <code>flowlite\test.wav</code>
+- Extraction scripts: <code>tools\asar.js</code>, <code>tools\ctx.js</code></p>
 <p><strong>Brief (verbatim, pasted text):</strong></p>
 <blockquote>
 <p>1 Find Wispr Flow in my Desktop folder. Use REA to inspect the app. Use its official website as background.
@@ -63,23 +63,23 @@ th{background:#16213a;color:var(--text)}
 <p>The brief has four parts: locate, trace, classify the evidence, and propose. Two parts carried hidden risk:</p>
 <ul>
 <li>"Find Wispr Flow in my Desktop folder." The app was not there. I had to find it, and the report had to say plainly that it was not on the Desktop.</li>
-<li>"Propose a small working version." This asked for a proposal, not a build. In the first phase I wrote a code sketch into the report and did not build it. When Simon asked "Did you finish the whispr rebuild", the correct answer was "No". He then asked me to build it and to test it with receipts.</li>
+<li>"Propose a small working version." This asked for a proposal, not a build. In the first phase I wrote a code sketch into the report and did not build it. When the user asked "Did you finish the whispr rebuild", the correct answer was "No". He then asked me to build it and to test it with receipts.</li>
 </ul>
 <h2>2. Starting context and invisible constraints</h2>
-<p><strong>Environment at minute zero.</strong> Windows 11 Home 10.0.26300; PowerShell 5.1 and Git Bash; working directory <code>C:\Users\simon\Downloads\REA</code> (not a git repo); model Claude Opus 5.5 (<code>claude-opus-5-5</code>). The REA MCP tools (<code>mcp__rea__*</code>) were deferred, so I loaded them with <code>ToolSearch</code> before the first call. Some MCP servers had failed to connect at session start (<code>kb</code>, <code>anthropic-financial-services</code>, <code>mtnewswire</code>, <code>paper</code>). None of them was needed.</p>
+<p><strong>Environment at minute zero.</strong> Windows 11; PowerShell 5.1 and Git Bash; working directory <code>C:\Users\&lt;user&gt;\Downloads\REA</code> (not a git repo); model Claude Opus 5.5 (<code>claude-opus-5-5</code>). The REA MCP tools (<code>mcp__rea__*</code>) were deferred, so I loaded them with <code>ToolSearch</code> before the first call. Some MCP servers had failed to connect at session start (<code>kb</code>, <code>anthropic-financial-services</code>, <code>mtnewswire</code>, <code>paper</code>). None of them was needed.</p>
 <p><strong>Rules that shaped the output.</strong> A reader cannot see these, so I list them:
 - <code>~/.claude/CLAUDE.md</code>: write in ASD-STE100 Simplified Technical English; plain language with no technical content removed; precise phrasing, no rhetoric; HTML output in dark mode (<code>bg #0f172a</code>, card <code>#1e293b</code>, accents <code>#fb923c</code> / <code>#2dd4bf</code>); "Never kill a process by name"; "Finish, or say what you left"; "Find the path before you read it".
 - <code>AGENTS.md</code>: customer-facing docs in HTML, internal docs in Markdown. This journey is an internal doc, so it is Markdown.
 - The <strong>Ponytail</strong> hook was active at level "full": do the smallest thing that works. It made the rebuild one file with no new abstractions.
-- <strong>Focus mode</strong> was on, so Simon sees only my final message each turn. Every report therefore had to stand alone.
+- <strong>Focus mode</strong> was on, so the user sees only my final message each turn. Every report therefore had to stand alone.
 - A <strong>coach-nudge</strong> hook fired at about 204k, 233k and 274k context tokens. It asked me to repeat its text and to suggest <code>handoff-after-clear</code> then <code>/clear</code>.
 - Skills invoked: <code>reverse-engineer-anything</code> (the REA skill) at the start, and <code>dev-journey</code> for this document.</p>
-<p><strong>What I reused instead of working out again.</strong> The memory index <code>MEMORY.md</code> already held "REA JS graph limits — no string values in graph; export bundle when over MCP budget". That note predicted exactly the gap that made REA's graph unable to show hostnames. A second note, "AV blocks Bash curl", is why I never used curl. I also found the folder <code>C:\Users\simon\Downloads\REA_whispr_flow_eric_tech\</code>, which held only <code>README.txt</code> with this prompt and the YouTube link <code>https://www.youtube.com/watch?v=FnB9tHKBJXQ</code>. I made that folder the output location. I did not watch the video.</p>
+<p><strong>What I reused instead of working out again.</strong> The memory index <code>MEMORY.md</code> already held "REA JS graph limits — no string values in graph; export bundle when over MCP budget". That note predicted exactly the gap that made REA's graph unable to show hostnames. A second note, "AV blocks Bash curl", is why I never used curl. I also found the project folder, which held only <code>README.txt</code> with this prompt and a YouTube link. I made that folder the output location. I did not watch the video.</p>
 <h2>3. Finding the app</h2>
 <ol>
 <li><code>Get-ChildItem</code> on <code>$env:USERPROFILE\Desktop</code> and the OneDrive Desktop, filtered on <code>wispr|flow</code>, returned exit code 1 with no output.</li>
-<li><code>[Environment]::GetFolderPath('Desktop')</code> returned <code>C:\Users\simon\OneDrive\Email attachments\Desktop</code>, an unusual redirected path. That folder held only <code>desktop.ini</code>. <code>C:\Users\simon\Desktop</code> held unrelated files (<code>sticky.html</code>, <code>disk_hog_summary.md</code>, and others).</li>
-<li>A search of <code>$env:LOCALAPPDATA</code>, <code>$env:APPDATA</code> and the Program Files folders found <code>C:\Users\simon\AppData\Local\WisprFlow</code> and <code>C:\Users\simon\AppData\Roaming\Wispr Flow</code>.</li>
+<li><code>[Environment]::GetFolderPath('Desktop')</code> returned <code>C:\Users\&lt;user&gt;\OneDrive\…\Desktop</code>, an unusual redirected path. That folder held only <code>desktop.ini</code>. <code>C:\Users\&lt;user&gt;\Desktop</code> held only unrelated files.</li>
+<li>A search of <code>$env:LOCALAPPDATA</code>, <code>$env:APPDATA</code> and the Program Files folders found <code>C:\Users\&lt;user&gt;\AppData\Local\WisprFlow</code> and <code>C:\Users\&lt;user&gt;\AppData\Roaming\Wispr Flow</code>.</li>
 <li>The install is managed by the Squirrel updater (<code>Update.exe</code>, <code>Squirrel-*.log</code>). It has three versions: <code>app-1.4.303</code>, <code>app-1.4.338</code>, <code>app-1.6.1102</code>. I chose <strong>1.6.1102</strong>, the newest.</li>
 </ol>
 <p>Inventory of <code>app-1.6.1102</code>:</p>
@@ -336,7 +336,7 @@ th{background:#16213a;color:var(--text)}
 <tr>
 <td>Rebuild ASR</td>
 <td>Local <code>faster-whisper</code> <code>base.en</code> on CUDA</td>
-<td>A cloud API needs a key and costs money; Simon already runs faster-whisper; Wispr's own service is closed</td>
+<td>A cloud API needs a key and costs money; the user already runs faster-whisper; Wispr's own service is closed</td>
 </tr>
 <tr>
 <td>Hotkey library</td>
@@ -361,31 +361,31 @@ th{background:#16213a;color:var(--text)}
 <tr>
 <td>End-to-end test</td>
 <td>Hold F9 with a synthetic key press, paste into a separate test app</td>
-<td>Pasting into Notepad risks Simon's open session tabs; my own test window can save its text to a file</td>
+<td>Pasting into Notepad risks the user's open session tabs; my own test window can save its text to a file</td>
 </tr>
 </tbody>
 </table>
 <h2>8. The rebuild and its tests</h2>
 <h3>8.1 Building <code>flowlite.py</code></h3>
 <ul>
-<li>Probe: Python 3.13.5. <code>faster_whisper</code>, <code>sounddevice</code>, <code>numpy</code>, <code>pyperclip</code> and <code>ctranslate2</code> were already installed; <code>keyboard</code> was missing. <code>ctranslate2.get_cuda_device_count()</code> returned 1, and <code>nvidia-smi</code> showed "NVIDIA GeForce RTX 3050 Laptop GPU, 4096 MiB".</li>
+<li>Probe: Python 3.13.5. <code>faster_whisper</code>, <code>sounddevice</code>, <code>numpy</code>, <code>pyperclip</code> and <code>ctranslate2</code> were already installed; <code>keyboard</code> was missing. <code>ctranslate2.get_cuda_device_count()</code> returned 1, and <code>nvidia-smi</code> showed an NVIDIA laptop GPU with 4096 MiB.</li>
 <li><code>python -m pip install keyboard</code>. This was the only package installed.</li>
 <li>The file has 64 lines: <code>load_model()</code> (CUDA float16, falling back to CPU int8), <code>transcribe()</code> (<code>vad_filter=True</code>), <code>record()</code> (16 kHz mono float32 <code>InputStream</code> while F9 is held), <code>paste()</code> (save clipboard → copy → <code>ctrl+v</code> → 0.15 s → restore), and <code>main()</code> with <code>--test</code>. Two <code>ponytail:</code> comments mark the known limits: the fixed delay and the text-only restore.</li>
 </ul>
 <h3>8.2 Self-test on a synthetic voice</h3>
 <ul>
 <li>Test audio: <code>System.Speech</code> SpeechSynthesizer at 16,000 Hz, 16-bit, mono → <code>test.wav</code>, 144,526 B, about 4.5 s, text "Let's meet at six PM on Thursday to review the quarterly report."</li>
-<li><strong>Failure:</strong> PowerShell variable names ignore case, so <code>$S</code> (the folder) and <code>$s</code> (the synthesizer) were one variable. Error: "Could not find a part of the path 'C:\Users\simon\Downloads\REA\System.Speech.Synthesis.SpeechSynthesizer\test.wav'". The fix was to rename the variables to <code>$dir</code> and <code>$syn</code>.</li>
+<li><strong>Failure:</strong> PowerShell variable names ignore case, so <code>$S</code> (the folder) and <code>$s</code> (the synthesizer) were one variable. Error: "Could not find a part of the path 'C:\Users\&lt;user&gt;\Downloads\REA\System.Speech.Synthesis.SpeechSynthesizer\test.wav'". The fix was to rename the variables to <code>$dir</code> and <code>$syn</code>.</li>
 <li><code>python flowlite.py --test test.wav</code> → <code>Let's meet at 6 p.m. on Thursday to review the quarterly report.</code> Total time 20.2 s (first run), then 19.7 s.</li>
 <li><strong>Failure:</strong> my timing script used <code>python -I</code> and got "ModuleNotFoundError: No module named 'faster_whisper'". The <code>-I</code> flag hides user site-packages. I ran it again without <code>-I</code>; it is safe here because the code is my own. Measured result: device <code>cuda</code>, 16.4 s to import and load the model, ASR 0.63 s on the first call and 0.23 s on the second, for 4.5 s of audio.</li>
-<li>Separate checks: default input "Microphone Array (2- Intel® Sma"; a 0.5 s mic sample gave RMS 1.46e-05; <code>keyboard.is_pressed('f9')</code> returned False with no error; clipboard set and restore both gave True.</li>
+<li>Separate checks: default input: the built-in laptop mic array; a 0.5 s mic sample gave RMS 1.46e-05; <code>keyboard.is_pressed('f9')</code> returned False with no error; clipboard set and restore both gave True.</li>
 <li>I started the live app as background task <code>baxca8zzt</code>. Its output: "Ready. Hold F9 and speak. Ctrl+C to quit."</li>
 </ul>
 <h3>8.3 "Test it yourself providing receipts"</h3>
 <p><strong>Test setup:</strong> <code>target.py</code> is a topmost tkinter window titled <code>flowlite-e2e-target</code>. It saves its text to <code>target_text.txt</code> every 0.3 s. <code>driver.py</code> does the rest:
 1. Puts the marker <code>CLIPBOARD-SENTINEL-&lt;unix time&gt;</code> on the clipboard.
 2. Starts the target and stores its PID.
-3. Waits until <code>GetForegroundWindow</code> belongs to the target, using an Alt press and <code>SetForegroundWindow</code>. If the target never becomes the foreground window, it <strong>stops without pressing F9</strong>. This guard keeps a paste from landing in Simon's own window.
+3. Waits until <code>GetForegroundWindow</code> belongs to the target, using an Alt press and <code>SetForegroundWindow</code>. If the target never becomes the foreground window, it <strong>stops without pressing F9</strong>. This guard keeps a paste from landing in the user's own window.
 4. Holds F9 through <code>keyboard.press</code>, plays the WAV, releases F9, and waits 6 s.
 5. Takes a screenshot of the target with <code>ImageGrab</code>, then reads the target's text and the clipboard.</p>
 <table>
@@ -401,14 +401,14 @@ th{background:#16213a;color:var(--text)}
 <tbody>
 <tr>
 <td>1</td>
-<td>Default output = "Headset Earphone (Plantronics B" → laptop mic</td>
+<td>Default output = a USB headset earphone → laptop mic</td>
 <td><code>4.9s audio, 0.13s ASR: ''</code></td>
 <td><code>""</code></td>
 <td>true</td>
 </tr>
 <tr>
 <td>2</td>
-<td>Forced output "Speaker (3- Realtek(R) Audio)" (MME) → laptop mic</td>
+<td>Forced output = the built-in laptop speaker (MME) → laptop mic</td>
 <td><code>5.5s audio, 0.01s ASR: ''</code></td>
 <td><code>""</code></td>
 <td>true</td>
@@ -422,7 +422,7 @@ th{background:#16213a;color:var(--text)}
 </tr>
 </tbody>
 </table>
-<p><strong>Diagnosis of runs 1–2.</strong> The first run played the speech into the headset, where the laptop mic could not hear it. For the second run I used <code>sd.playrec</code> on the Realtek speaker and the Intel mic. The mic got RMS 1.72e-04 and peak 7.08e-03, about 12 times the 1.46e-05 silence level, but still too quiet to transcribe. Whisper returned <code>''</code> with VAD and <code>''</code> without VAD. After I scaled the audio to full level, it returned "Let's be that welcome.", which is wrong text. So raising the gain in software does not fix this; the problem is in the sound path. I did not read or change the Windows volume settings.</p>
+<p><strong>Diagnosis of runs 1–2.</strong> The first run played the speech into the headset, where the laptop mic could not hear it. For the second run I used <code>sd.playrec</code> on the built-in speaker and the built-in mic. The mic got RMS 1.72e-04 and peak 7.08e-03, about 12 times the 1.46e-05 silence level, but still too quiet to transcribe. Whisper returned <code>''</code> with VAD and <code>''</code> without VAD. After I scaled the audio to full level, it returned "Let's be that welcome.", which is wrong text. So raising the gain in software does not fix this; the problem is in the sound path. I did not read or change the Windows volume settings.</p>
 <p><strong>Run 3 design.</strong> <code>flowlite_injected.py</code> imports the unchanged <code>flowlite</code> module and makes one swap: <code>flowlite.sd.InputStream = FakeStream</code>. FakeStream feeds the WAV in 640-sample blocks every 40 ms, which is real time, then silence. Before run 3 I stopped the live task with <code>TaskStop baxca8zzt</code>, so two copies would not both paste. The driver starts the injected flowlite as a subprocess, waits for "Ready.", and at the end kills it <strong>by its own captured PID</strong> (44868). The CLAUDE.md rule forbids killing by name.</p>
 <p><strong>Receipts saved:</strong> <code>flowlite/receipts/target.png</code> (the screenshot shows the sentence in the <code>flowlite-e2e-target</code> window), <code>flowlite_injected.log</code>, and the three test scripts. A check after the test showed PIDs 44868, 1792, 25916 and 56228 all "gone".</p>
 <h2>9. Tools used in this session</h2>
@@ -489,7 +489,7 @@ th{background:#16213a;color:var(--text)}
 1. <strong>Before writing.</strong> It told me to: put the coach note first; redact the four secrets; say plainly that the app was not on the Desktop; call the REA failures a harness failure and cite the CLI Evidence; stop chasing the helper bundle; prove the renderer-to-main IPC hop; prove the absence of a local model with a bounded search. It also listed labelling traps: 64 kbps, "SCRIBE" meaning ElevenLabs is only a guess from the name, the paste order is inferred, the "HTTP fallback" is really unary gRPC, the empty screenshot, and the default hotkey is unknown. <strong>This changed the report.</strong> I added the IPC proof (<code>dictation:audioChunk</code>), the bounded model search, and the corrected labels.
 2. <strong>Before finishing.</strong> It caught the VB-Audio sentence, which is meeting code, and two unmeasured claims: "usually under 1 s", and "before and during dictation". <strong>I fixed all three.</strong></p>
 <h2>11. Human-in-the-loop moments</h2>
-<p>Simon wrote five prompts: the brief, "Did you finish the whispr rebuild", "Rebuild it", "Test it yourself providing receipts", and this request. He approved nothing interactively; permissions were in bypass mode. He did not do the live voice test, which is the one test that needs a person.</p>
+<p>The user wrote five prompts: the brief, "Did you finish the whispr rebuild", "Rebuild it", "Test it yourself providing receipts", and this request. He approved nothing interactively; permissions were in bypass mode. He did not do the live voice test, which is the one test that needs a person.</p>
 <h2>12. Costs and limits</h2>
 <ul>
 <li>No paid API calls. ASR ran locally; the WebFetch calls were free.</li>
@@ -549,7 +549,7 @@ th{background:#16213a;color:var(--text)}
 - The default hotkey.</p>
 <h2>14. Unfinished business</h2>
 <ol>
-<li><strong>Live voice test.</strong> Not done, because it needs a person to speak, and the speaker-to-mic path is too quiet (RMS 1.72e-04). To finish it, Simon runs <code>python flowlite.py</code>, holds F9, and speaks. If the log shows <code>''</code>, raise the mic level or use the Plantronics headset mic (flowlite would then need a <code>device=</code> argument). The rebuild works without this test; run 3 proves every stage except the acoustic one.</li>
+<li><strong>Live voice test.</strong> Not done, because it needs a person to speak, and the speaker-to-mic path is too quiet (RMS 1.72e-04). To finish it, the user runs <code>python flowlite.py</code>, holds F9, and speaks. If the log shows <code>''</code>, raise the mic level or use the headset mic (flowlite would then need a <code>device=</code> argument). The rebuild works without this test; run 3 proves every stage except the acoustic one.</li>
 <li><strong>Helper decompile.</strong> Not done (20 MB NativeAOT; needs a Ghidra provider; MCP timeouts). It would show which key combination is used per app and when the clipboard restore is skipped.</li>
 <li><strong>REA on the renderer bundles.</strong> Not done. It would pair renderer senders with the 166 main handlers.</li>
 <li><strong>YouTube video in <code>README.txt</code>.</strong> Not watched.</li>
@@ -557,7 +557,7 @@ th{background:#16213a;color:var(--text)}
 </ol>
 <h2>15. Knowledge captured</h2>
 <ul>
-<li>Memory: <code>C:\Users\simon\.claude\projects\C--Users-simon-Downloads-REA\memory\rea-mcp-timeout-large-asar.md</code>, with an index line in <code>MEMORY.md</code>. It records that REA MCP times out on a 133 MB ASAR, that the fix is to run the CLI on an extracted subset, and that a NativeAOT helper is not a managed PE.</li>
+<li>Memory: <code>~\.claude\projects\&lt;project&gt;\memory\rea-mcp-timeout-large-asar.md</code>, with an index line in <code>MEMORY.md</code>. It records that REA MCP times out on a 133 MB ASAR, that the fix is to run the CLI on an extracted subset, and that a NativeAOT helper is not a managed PE.</li>
 <li>Report: <code>wispr-flow-teardown.html</code>, with proven, inferred and hidden labels, a server table, and an evidence-offset table.</li>
 <li>Scripts moved out of the scratchpad: <code>tools/asar.js</code>, <code>tools/ctx.js</code>, <code>flowlite/receipts/*</code>, <code>flowlite/test.wav</code>.</li>
 </ul>
@@ -573,7 +573,7 @@ th{background:#16213a;color:var(--text)}
 <li>The teardown is complete for static analysis of 1.6.1102. Its proven, inferred and hidden labels are in the report.</li>
 <li><code>flowlite.py</code> works from end to end on injected audio, with receipts. It has not been tested with a live voice.</li>
 <li>Nothing is running.</li>
-<li>Published (at Simon's request) to the public repo <code>https://github.com/az9713/wispr-flow-rea-teardown</code>. Before the commit, I cropped <code>flowlite/receipts/target.png</code> to the test window only, because the first capture showed fragments of other windows. No secret values are in the repo; a search for the five embedded secret patterns found 0 files.</li>
+<li>Published (at the user's request) to the public repo <code>https://github.com/az9713/wispr-flow-rea-teardown</code>. Before the commit, I cropped <code>flowlite/receipts/target.png</code> to the test window only, because the first capture showed fragments of other windows. No secret values are in the repo; a search for the five embedded secret patterns found 0 files.</li>
 </ul>
 <p>Next steps (options):
 1. <strong>Live voice test.</strong> Run the live test and fix the mic path.
