@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Ghidra Pass</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--text2:#cbd5e1;--muted:#94a3b8;--acc:#fb923c;--acc2:#2dd4bf;--b1:#1e293b;--b2:#334155;--ok:#4ade80;--warn:#facc15;--bad:#f87171}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:960px;margin:0 auto;padding:32px 16px 80px}
+h1{font-size:1.9rem;margin:0 0 4px}
+h2{color:var(--acc);margin:40px 0 12px;font-size:1.35rem;border-bottom:1px solid var(--b2);padding-bottom:6px}
+h3{color:var(--acc2);margin:24px 0 8px;font-size:1.08rem}
+p,li{color:var(--text2)}
+a{color:var(--acc2)}
+.muted{color:var(--muted);font-size:.92rem}
+code{background:#0b1222;border:1px solid var(--b2);border-radius:4px;padding:1px 5px;font-size:.88em;word-break:break-word}
+pre{background:#0b1222;border:1px solid var(--b2);border-radius:8px;padding:12px;overflow-x:auto;font-size:.85rem;color:var(--text2)}
+blockquote{margin:10px 0;padding:8px 14px;border-left:4px solid var(--b2);background:#0b1222;border-radius:0 8px 8px 0;color:var(--text2)}
+.card{background:var(--card);border:1px solid var(--b2);border-radius:10px;padding:16px 18px;margin:14px 0}
+table{width:100%;border-collapse:collapse;font-size:.92rem;margin:10px 0}
+th,td{border:1px solid var(--b2);padding:7px 9px;text-align:left;vertical-align:top}
+th{background:#16213a;color:var(--text)}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:999px;padding:1px 8px;margin-right:4px}
+.p{background:#14532d;color:var(--ok)} .i{background:#713f12;color:var(--warn)} .h{background:#7f1d1d;color:var(--bad)}
+.wrap{overflow-x:auto}
+nav ol{columns:2;column-gap:32px}
+@media (max-width:640px){nav ol{columns:1}}
+</style>
+</head>
+<body>
+<main>
+<h1>The Ghidra pass on Wispr Flow's helper</h1>
+<p class="muted">What Ghidra did in this project, why it did not run at the start, what it proved, and what it changed. Wispr Flow 1.6.1102 on Windows 11. 2026-10-11. <a href="index.html">Home</a> · <a href="wispr-flow-teardown.html#ghidra">Teardown section 7</a> · <a href="DEVELOPMENT-JOURNEY.html">Development journey</a></p>
+
+<div class="card">
+<h3>Short answer</h3>
+<ul>
+<li><b>Was Ghidra used?</b> Yes, in the second pass only. The first pass used no disassembler.</li>
+<li><b>On what?</b> Only on <code>Wispr Flow Helper.exe</code>, the one machine-code part of Wispr Flow. The rest of the app is JavaScript, and REA reads JavaScript without a disassembler.</li>
+<li><b>How?</b> REA 6.3.0 used Ghidra 12.1.4 as its native-code engine. I read 21 paste functions as Ghidra pseudocode. Each one has an REA Evidence ID.</li>
+<li><b>Was flowlite rebuilt after it?</b> Yes. <code>flowlite/flowlite.py</code> now uses the paste rules that Ghidra proved. The tests ran again after the change.</li>
+<li><b>Why did REA not install and start Ghidra at the beginning?</b> REA never installs Ghidra; it uses only an installation that you point it to with <code>GHIDRA_INSTALL_DIR</code>. That variable was not set. Also, I did not check the engines in the first pass. See <a href="#why">section 2</a>.</li>
+</ul>
+</div>
+
+<nav class="card"><h3>Contents</h3><ol>
+<li><a href="#status">Project status</a></li>
+<li><a href="#why">Why Ghidra did not run at the start</a></li>
+<li><a href="#role">The role of Ghidra</a></li>
+<li><a href="#setup">Setup and run</a></li>
+<li><a href="#method">Method: finding code without names</a></li>
+<li><a href="#proven">What Ghidra proved</a></li>
+<li><a href="#limits">Inferred and still hidden</a></li>
+<li><a href="#consequences">Consequences of the Ghidra pass</a></li>
+<li><a href="#flowlite">The flowlite rebuild and its tests</a></li>
+<li><a href="#open">Open items</a></li>
+<li><a href="#functions">The 21 functions</a></li>
+<li><a href="#where">Where each fact is recorded</a></li>
+</ol></nav>
+
+<h2 id="status">1. Project status</h2>
+<ul>
+<li><b>Repository:</b> <a href="https://github.com/az9713/wispr-flow-rea-teardown">github.com/az9713/wispr-flow-rea-teardown</a>, branch <code>main</code>.</li>
+<li><b>Ghidra commit:</b> <code>0f18137</code> "Redo the helper teardown with Ghidra; apply its paste rules to flowlite". It changed 30 files: 2,872 lines added and 22 removed.</li>
+<li><b>Live pages:</b> <a href="https://az9713.github.io/wispr-flow-rea-teardown/">az9713.github.io/wispr-flow-rea-teardown</a>. Section 7 of the teardown shows the Ghidra results.</li>
+<li><b>Contents:</b> the teardown report, the development journey (17 sections), the index page with run steps and limits, <code>flowlite/</code>, <code>ghidra/</code> (21 pseudocode files and <code>evidence.tsv</code>), and <code>tools/</code>.</li>
+<li><b>State:</b> the Ghidra pass is complete. The open items are in <a href="#open">section 10</a>.</li>
+</ul>
+
+<h2 id="why">2. Why Ghidra did not run at the start</h2>
+<p>Wispr Flow is a Windows app, but most of it is not machine code. It is an Electron app: 133 MB of JavaScript in <code>app.asar</code>. Only one 20,228,632-byte file, <code>Wispr Flow Helper.exe</code>, is machine code. Speech capture, the server connection and transcription are all in the JavaScript. So the first pass answered most of the brief without a disassembler. Only the helper's paste rules needed one.</p>
+<p>Ghidra did not run on the helper in the first pass for five reasons. Three are REA design rules. One is the harness, and one is my error.</p>
+
+<h3>Reason 1 (REA design): REA never installs Ghidra or Java</h3>
+<p>REA's own documentation states this in three places:</p>
+<blockquote>"REA does not install or upgrade Ghidra, Java, Python, npm, Node.js, Hopper, or a compiler." <span class="muted">(<code>docs/windows-ghidra-p0.md</code>)</span></blockquote>
+<blockquote>"Setup never installs Ghidra, Java, or Python." … "writes only after approval, and never downloads, installs, upgrades, or modifies Ghidra or Java." <span class="muted">(<code>docs/installation.md</code>, Ghidra section)</span></blockquote>
+<blockquote>"Extract Ghidra and install the JDK outside REA, then export absolute paths". <span class="muted">(<code>docs/installation.md</code>)</span></blockquote>
+<p>The REA skill that I followed gives the same rule to the agent: "REA setup never installs or upgrades Node.js, npm, Homebrew, Java, Ghidra, IDA, JADX, Binwalk, or Unblob. Use existing prerequisites". The documentation does not give the reason for this rule. <span class="tag i">INFERRED</span> Ghidra is third-party software: the download is 569,649,598 bytes, and it needs its own JDK. An install of that size changes the PC outside REA's own files.</p>
+
+<h3>Reason 2 (REA design): REA does not search the disk for Ghidra</h3>
+<p>REA finds Ghidra only through the environment variable <code>GHIDRA_INSTALL_DIR</code>. <code>rea doctor</code> reported <code>missing_analysis_engine</code> with the message <code>GHIDRA_INSTALL_DIR is not set</code>. But a Ghidra 12.1.4 copy was already on this PC, in the user's <code>tools</code> folder. A different session had put it there on 2026-10-10. REA could not see it, because the variable was not set.</p>
+
+<h3>Reason 3 (REA design): the other two engines were not usable here</h3>
+<ul>
+<li><b>Hopper</b> is the only engine that REA setup can install, and only after approval. REA's documentation says: "Hopper installation remains unavailable on Windows."</li>
+<li><b>IDA</b> is commercial software. REA uses it only through an existing <code>ida-pro-mcp</code> registration. <code>rea doctor</code> reported <code>IDA MCP registration is not configured.</code></li>
+<li><b>Ghidra on Windows</b> is an "experimental Windows x64 P0" boundary. It is read-only: 25 inventory and analysis operations, and no renames or comments in the Ghidra database.</li>
+</ul>
+
+<h3>Reason 4 (harness): the MCP calls stopped on a timeout</h3>
+<p>In the first pass, the REA MCP calls ran for a long time with no progress, and Claude Code stopped them on its MCP idle timeout:</p>
+<ul>
+<li><code>analyze_javascript_application</code> on the 133 MB ASAR: no progress for 3,385 s.</li>
+<li><code>inspect_managed_artifact</code> on the helper: no progress for 3,666 s.</li>
+</ul>
+<p>This is a limit of the harness (Claude Code), not of the model or of REA. Even with a configured Ghidra, a long Ghidra run through Claude Code's MCP connection would have met the same limit. The second pass did not use Claude Code's MCP connection for this reason (see <a href="#setup">section 4</a>).</p>
+
+<h3>Reason 5 (my error): I used the wrong tool and did not check the engines</h3>
+<ul>
+<li>The REA skill routes a ".NET NativeAOT PE/ELF" file to "native Ghidra analysis". I first sent the helper to <code>inspect_managed_artifact</code>, which reads managed .NET files. The helper has no CLR header (the header directory is <code>0 0</code>), so that tool did not apply.</li>
+<li>I did not run <code>rea doctor</code> to check the engines in the first pass.</li>
+<li>My first report gave the timeouts as the reason the helper was not decompiled. That was incomplete. The missing engine was the real blocker. The teardown and the journey now say this.</li>
+<li>The rule from the skill, "use existing prerequisites", meant that an install of Ghidra needed your request. You asked for it in the second pass ("do all these steps and use Ghidra to redo the teardown and rebuild the app").</li>
+</ul>
+<p>Rule learned: "Check that the engine exists before you blame the timeout."</p>
+
+<h2 id="role">3. The role of Ghidra</h2>
+<h3>What Ghidra did</h3>
+<ul>
+<li><b>Engine behind REA.</b> REA started Ghidra in headless mode (no window) and sent it requests. REA set <code>REA_ANALYSIS_PROVIDER=ghidra</code>. REA gave each result an Evidence ID.</li>
+<li><b>Disassembly and analysis.</b> Ghidra turned the 20 MB helper into 56,803 functions and found 14,969 strings. Evidence: <code>ev_63ff9ab0f8afa4dfd337adbc0aea57e776623c5a8e10cf35790ae26bea871bab</code>.</li>
+<li><b>Cross-references.</b> Ghidra listed which code uses which address. This was how I found the paste code (see <a href="#method">section 5</a>).</li>
+<li><b>Pseudocode.</b> Ghidra's decompiler turned 21 functions into readable C-like code. This is a reconstruction of the machine code, not the original source.</li>
+</ul>
+<h3>What Ghidra did not do</h3>
+<ul>
+<li><b>No function names.</b> NativeAOT removes the .NET names. Ghidra calls each function <code>FUN_</code> plus its address. I gave the names, such as "SimulatePaste", from the log messages inside each function.</li>
+<li><b>No saved names in Ghidra.</b> Windows Ghidra in REA is read-only, so my names are only in the files in <code>ghidra/</code>.</li>
+<li><b>No NativeAOT type recovery.</b> REA has an optional adapter for this (<code>ghidra-nativeaot</code>). Its documentation lists only targets "analyzed on Linux x64", .NET runtime 8.0.22, and a JAR that you build yourself. I did not use it.</li>
+<li><b>No runtime observation.</b> Ghidra reads the file. It does not run the helper. So it cannot show which branch runs on your PC.</li>
+<li><b>No work on the JavaScript.</b> Speech capture, the gRPC stream and transcription stay as REA's JavaScript analyzer found them.</li>
+</ul>
+
+<h2 id="setup">4. Setup and run</h2>
+<ol>
+<li><b>Java.</b> JDK 23.0.2 was already installed at <code>C:\Program Files\Java\jdk-23</code>, with <code>javac</code>. Ghidra 12.1 needs JDK 21 or newer.</li>
+<li><b>Download.</b> <code>ghidra_12.1.4_PUBLIC_20260921.zip</code>, 569,649,598 bytes. Its SHA-256 matched the release note: <code>ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db</code>.</li>
+<li><b>Unzip.</b> I used <code>C:\Windows\System32\tar.exe</code>. It printed many <code>Can't unlink already-existing object: Permission denied</code> lines. The folder already held the copy from 2026-10-10, and a Ghidra process from that session still held its files open. I compared the folder with the zip: 5,219 files, 0 missing, 0 size differences. I did not stop that process, because I had not started it.</li>
+<li><b>Environment.</b> I set <code>GHIDRA_INSTALL_DIR</code> as a permanent user variable. Claude Code's REA MCP server had started before that, so it still cannot see Ghidra. A restart of Claude Code fixes this.</li>
+<li><b>First run failed.</b> <code>rea analyze ... --provider ghidra</code> stopped after 340 s with <code>"code": "provider_timeout"</code>, <code>"operation": "list_documents"</code>, <code>"timeout_ms": 330000</code>. REA's default startup limit is 330,000 ms (5.5 minutes).</li>
+<li><b>Time limit raised.</b> REA's documentation names the fix, <code>REA_GHIDRA_STARTUP_TIMEOUT_MS</code>. I set it to 10,800,000 ms (3 hours).</li>
+<li><b>One session for all queries.</b> Each REA CLI command imports and analyzes the file again, because REA's Ghidra project is temporary. So I wrote <a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/tools/rea_session.mjs"><code>tools/rea_session.mjs</code></a>. It starts <code>rea --mcp</code> as a child process, keeps one Ghidra session open, and runs requests from a folder queue. It does not go through Claude Code's MCP connection, so the idle timeout does not apply.</li>
+<li><b>Analysis time.</b> <code>open_binary</code> returned in 0.2 s. The first deep request, <code>binary_overview</code>, waited for Ghidra's analysis. Ghidra's log said <code>Total Time 1310 secs</code>, then <code>Analysis succeeded</code>. 1,310 s is about 22 minutes, about 4 times REA's default limit.</li>
+<li><b>Close.</b> I closed the session with <code>close_binary</code> and saved a snapshot of the results: 796,889 bytes, 79 Evidence records. I stopped my driver by its task ID. Its REA server and Ghidra process ended.</li>
+</ol>
+<p>Other errors on the way, with their fixes:</p>
+<ul>
+<li><code>SyntaxError: Bad escaped character in JSON at position 41</code>: <code>printf</code> had changed the backslashes in a Windows path in a queue file. Fix: write queue files from Node, and skip a bad file instead of a crash.</li>
+<li><code>UnicodeEncodeError: 'charmap' codec can't encode character '\u9810'</code> in <code>tools/strs.py</code>, when a pointer was not a real string. Fix: keep only ASCII text.</li>
+</ul>
+
+<h2 id="method">5. Method: finding code without names</h2>
+<ol>
+<li>The usual method is to search for the Windows functions that paste: <code>SendInput</code>, <code>SetClipboardData</code>, <code>SetWindowsHookExW</code>. REA's <code>find_xrefs_to_name</code> returned <code>name_not_found</code> for all three. The helper does not import them by name in its import table.</li>
+<li>The helper writes log messages, such as "Pasted successfully using delayed clipboard manager". Ghidra found these as strings. But a search for code that uses the string's address returned an empty list (<code>[]</code>).</li>
+<li>The reason: in NativeAOT, a string is a .NET object. The object has an 8-byte type pointer and a 4-byte length, then the characters. The code points at the start of the object, which is 12 bytes (<code>0xC</code>) before the characters.</li>
+<li>So I asked REA for references to <i>string address − 12</i>. That found the function behind each log message. Example: the reference at <code>0x1403256d8</code> for "Pasted successfully using delayed clipboard manager".</li>
+<li>I read each function as pseudocode and followed its calls to the next function.</li>
+<li><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/tools/strs.py"><code>tools/strs.py</code></a> writes the string text next to each <code>PTR_DAT_</code> reference in the pseudocode, so the files can be read without Ghidra.</li>
+</ol>
+<p>Rule learned: "A NativeAOT string reference points 12 bytes before the text."</p>
+
+<h2 id="proven">6. What Ghidra proved</h2>
+<p><span class="tag p">PROVEN</span> These rules come from the pseudocode, its constants and its log strings.</p>
+<ol>
+<li><b>Two paste paths.</b>
+  <ul>
+  <li><b>Delayed-render path (first try).</b> The helper registers the text on the clipboard without copying it, then presses the paste keys. When the target app reads the clipboard, Windows sends the helper message <code>0x305</code>. The helper then supplies the text as format <code>13</code>, format <code>1</code> or the HTML format, and logs <code>"Clipboard read detected! Rendering delayed data..."</code>. This is how the helper knows that the paste reached the app.</li>
+  <li><b>Regular path (fallback).</b> The helper uses it if the delayed-render path fails, or if the text has <code>{{TAB}}</code> or <code>{{BREAK}}</code> markers. It saves the clipboard, writes the text, presses the keys, then restores the clipboard.</li>
+  </ul></li>
+<li><b>Formats written.</b> <code>Text</code>, and also <code>HTML Format</code> when <code>htmlText</code> is not empty.</li>
+<li><b>Paste keys.</b> Ctrl+V is the key array <code>0x560011</code> (key code <code>0x11</code> Ctrl, <code>0x56</code> V). Shift+Insert is <code>0x2d0010</code> (<code>0x10</code> Shift, <code>0x2D</code> Insert). The helper uses Shift+Insert only when the flag <code>shift-insert</code> is on <i>and</i> the focused process is <code>Cursor</code>, <code>Windsurf</code> or <code>Code</code>. Otherwise it uses Ctrl+V.</li>
+<li><b>Key timing.</b> It sends all key-downs in one <code>SendInput</code> call, waits 50 ms (<code>Sleep(0x32)</code>), then sends all key-ups. It tries a failed key-up again once.</li>
+<li><b>Waits.</b> 50 ms after the keys (<code>"Pasted text in window, now sleeping for 50 ms for paste to complete"</code>). In marked text: 150 ms before a Tab key, and 50 ms between sections. On the regular path: 500 ms, then the restore.</li>
+<li><b>Restore delay for each app</b> (delayed-render path). The helper compares the start of the process name, upper and lower case equal (comparison mode <code>5</code>):
+<div class="wrap"><table>
+<tr><th>Apps (process name starts with)</th><th>Restore delay</th><th>Time limit for the app to read the clipboard</th></tr>
+<tr><td><code>vncviewer</code>, <code>tvnviewer</code>, <code>mstsc</code>, <code>msrdc</code>, <code>wfica32</code>, <code>vmware-view</code>, <code>rdcman</code>, <code>anydesk</code>, <code>teamviewer</code> (remote-desktop apps)</td><td>5,000 ms</td><td>3,000 ms</td></tr>
+<tr><td><code>OUTLOOK</code>, <code>olk</code>, <code>WINWORD</code>, <code>WhatsApp</code></td><td>3,000 ms</td><td>3,000 ms</td></tr>
+<tr><td>All other apps</td><td>500 ms</td><td>1,000 ms</td></tr>
+</table></div>
+If the app does not read the clipboard in that time, the helper logs <code>"Clipboard not read within timeout -- paste likely failed"</code> and reports a failure.</li>
+<li><b>No restore</b> when the clipboard changed after the paste (<code>"Clipboard changed since paste, skipping restoration"</code>), or when the flag <code>disable-clipboard-restore</code> is on.</li>
+<li><b>What is saved and restored.</b> <i>FormatsToRestore</i>: <code>Text</code>, <code>UnicodeText</code>, <code>HTML Format</code>, the bitmap and image formats, and the Windows clipboard-history markers (<code>CanIncludeInClipboardHistory</code>, <code>CanUploadToCloudClipboard</code>, <code>ExcludeClipboardContentFromMonitorProcessing</code>, <code>Clipboard Viewer Ignore</code>). <i>FormatsToIgnore</i>: <code>FileDrop</code>, <code>Rich Text Format</code>, <code>Portable Document Format</code>, <code>WaveAudio</code>, <code>Csv</code> and others. Any other format is logged as <code>"Found unknown clipboard format"</code>.</li>
+<li><b>Safety checks.</b>
+  <ul>
+  <li>If a modifier key is held, the helper reports failure cause 2.</li>
+  <li>When the flag <code>windows-key-up-simulation</code> is on, it releases a held Alt (key codes <code>0x12</code>, <code>0xA4</code>, <code>0xA5</code>) or Windows key (<code>0x5B</code>, <code>0x5C</code>) with a "masking sequence" that uses Ctrl (<code>0x11</code>).</li>
+  <li>If the target window runs at a higher privilege level (for example, as administrator), the paste fails with cause 4, <code>UIPI_RESTRICTIONS</code>.</li>
+  <li>If the keys were already sent, it does not paste again on the regular path, so the text cannot appear twice.</li>
+  </ul></li>
+<li><b>Threading.</b> The regular path runs on an STA thread. If the caller is not on one, the helper starts a new STA thread and waits for it.</li>
+</ol>
+
+<h2 id="limits">7. Inferred and still hidden</h2>
+<h3><span class="tag i">INFERRED</span></h3>
+<ul>
+<li>The function names in <a href="#functions">section 11</a>. Each name comes from the log strings inside that function, not from a symbol.</li>
+<li>The Windows names of the numbers: <code>0x305</code>/<code>0x306</code> = <code>WM_RENDERFORMAT</code>/<code>WM_RENDERALLFORMATS</code>, and formats <code>13</code>/<code>1</code> = <code>CF_UNICODETEXT</code>/<code>CF_TEXT</code>. The numbers are in the code. The names come from my knowledge of Win32, not from the binary.</li>
+<li>Comparison mode <code>5</code> = <code>OrdinalIgnoreCase</code> (.NET knowledge, not in the binary).</li>
+<li>The purpose of a third list in the format setup function. It names the apps <code>Cursor</code>, <code>slack</code>, <code>GitHubDesktop</code>, <code>Discord</code>, <code>Spotify</code>, <code>chrome</code>, <code>brave</code>, <code>Arc</code>, <code>msedge</code>, <code>Opera</code>, <code>MozillaFirefox</code>, <code>Notepad</code>, <code>Windsurf</code>, and the sites <code>chatgpt.com</code>, <code>github.com</code>, <code>google.com</code>, <code>claude.ai</code>, <code>gemini.google.com</code>, <code>replit.com</code>, <code>v0.dev</code>. I did not trace where the helper uses these lists.</li>
+</ul>
+<h3><span class="tag h">STILL HIDDEN</span></h3>
+<ul>
+<li>The live values of the flags <code>shift-insert</code>, <code>disable-clipboard-restore</code> and <code>windows-key-up-simulation</code>. The code has both branches. The server sends the flags.</li>
+<li>The keyboard-hook procedure. Only <code>"Failed to create keyboard hook"</code> and <code>MultiKeybindService</code> were found. Not decompiled.</li>
+<li>The privilege check <code>FUN_140322010</code>, the HTML conversion <code>FUN_1403274e0</code>, and the UI Automation text reading. Not decompiled.</li>
+<li>Second references to the clipboard-history markers, at <code>0x140329848</code> and <code>0x140329884</code>. Not read.</li>
+</ul>
+
+<h2 id="consequences">8. Consequences of the Ghidra pass</h2>
+<h3>8.1 On the findings</h3>
+<div class="wrap"><table>
+<tr><th>Topic</th><th>Before Ghidra (first pass)</th><th>After Ghidra</th></tr>
+<tr><td>Message protocol between the app and the helper (<code>PasteText</code>, <code>PasteOutcome</code>, <code>PasteBlocked</code>)</td><td><span class="tag p">PROVEN</span> from the JavaScript</td><td>No change. Ghidra did not touch the JavaScript.</td></tr>
+<tr><td>Paste keys</td><td><span class="tag h">HIDDEN</span>. Strings such as <code>SendInput</code> and <code>PasteViaClipboard</code> showed that the helper pastes, but not with which keys.</td><td><span class="tag p">PROVEN</span> Ctrl+V, or Shift+Insert in 3 editors when a flag is on.</td></tr>
+<tr><td>Key timing and waits</td><td><span class="tag h">HIDDEN</span></td><td><span class="tag p">PROVEN</span> 50 ms hold, 50 ms after, 150 ms before Tab, 500 ms on the regular path.</td></tr>
+<tr><td>Clipboard restore rules</td><td><span class="tag h">HIDDEN</span>. Only the class names <code>ClipboardRestore</code> and <code>ClipboardRestorePolicy</code> were known.</td><td><span class="tag p">PROVEN</span> 500 / 3,000 / 5,000 ms by app; no restore when the clipboard changed or a flag is on.</td></tr>
+<tr><td>How the helper knows the paste worked</td><td><span class="tag h">HIDDEN</span></td><td><span class="tag p">PROVEN</span> the delayed-render clipboard and message <code>0x305</code>; 1,000 or 3,000 ms time limit.</td></tr>
+<tr><td>Refusals</td><td><span class="tag h">HIDDEN</span>. Only the message name <code>PasteBlocked</code> was known.</td><td><span class="tag p">PROVEN</span> modifier held (cause 2), higher-privilege window (cause 4, <code>UIPI_RESTRICTIONS</code>).</td></tr>
+<tr><td>Which branch runs on a real PC</td><td><span class="tag h">HIDDEN</span></td><td><span class="tag h">STILL HIDDEN</span>. The server flags decide it.</td></tr>
+</table></div>
+<p>In the same pass, I checked the teardown again and fixed two errors. Ghidra did not find these; a new count and a new read of the bundles found them:</p>
+<ul>
+<li>The number of database migrations is 169. The report said "~190".</li>
+<li>The report named the gRPC library as <code>@grpc/grpc-js</code>. It now says "a grpc-node client (library not named…)", because the bundle does not name the library.</li>
+</ul>
+
+<h3>8.2 On flowlite</h3>
+<div class="wrap"><table>
+<tr><th>Behavior</th><th>flowlite before</th><th>flowlite after (copies the helper)</th></tr>
+<tr><td>Paste keys</td><td>Always Ctrl+V</td><td>Shift+Insert in <code>code</code>, <code>cursor</code>, <code>windsurf</code>; Ctrl+V in other apps</td></tr>
+<tr><td>Key timing</td><td><code>keyboard.send("ctrl+v")</code>, no hold</td><td>Keys down, 50 ms, keys up in reverse order, then 50 ms</td></tr>
+<tr><td>Held modifier keys</td><td>Not checked</td><td>Waits up to 2 s for Ctrl, Shift, Alt and Windows to be released</td></tr>
+<tr><td>Restore delay</td><td>Fixed 0.15 s</td><td>0.5 s; 3 s for Outlook, Word, WhatsApp; 5 s for remote-desktop apps</td></tr>
+<tr><td>Restore when the clipboard changed</td><td>Always restored</td><td>Skipped</td></tr>
+<tr><td>Restore blocks the next dictation</td><td>Yes (<code>time.sleep</code>)</td><td>No (<code>threading.Timer</code>)</td></tr>
+<tr><td>Log line</td><td><code>3.2s audio, 0.85s ASR: '...'</code></td><td><code>5.1s audio, 0.92s ASR, python -&gt; ctrl+v, restore 0.5s: "..."</code></td></tr>
+</table></div>
+<p>One difference: Wispr uses Shift+Insert only when its <code>shift-insert</code> flag is on. flowlite has no flags, so it always uses Shift+Insert in those three editors.</p>
+<p>Not copied, to keep flowlite small: the delayed-render clipboard, the <code>HTML Format</code> copy, the snapshot of every clipboard format, and the <code>{{TAB}}</code> and <code>{{BREAK}}</code> markers. So flowlite cannot know if a paste reached the app, and it restores only clipboard text. An image on the clipboard is lost.</p>
+
+<h3>8.3 Costs</h3>
+<ul>
+<li><b>Download:</b> 569,649,598 bytes.</li>
+<li><b>Analysis time:</b> 1,310 s (about 22 minutes) before the first answer. Later requests used the open session, so they did not wait for a new analysis.</li>
+<li><b>Extra code:</b> <code>tools/rea_session.mjs</code> (60 lines) to work around the 330,000 ms default and the per-command import; <code>tools/strs.py</code> (21 lines) to show string text in the pseudocode.</li>
+<li><b>Two rejected tool calls and one question</b> from you before the run started ("why doesn't Ghidra look into the binary"), then "Go".</li>
+</ul>
+
+<h3>8.4 Changes on this PC</h3>
+<ul>
+<li>A permanent user environment variable, <code>GHIDRA_INSTALL_DIR</code>, points to the Ghidra 12.1.4 folder.</li>
+<li>The Ghidra folder holds the same 5,219 files as the zip.</li>
+<li>Claude Code's REA MCP tools still cannot see Ghidra until you restart Claude Code.</li>
+<li>The Ghidra process from 2026-10-10 still runs. I did not start it, so I did not stop it.</li>
+</ul>
+
+<h3>8.5 Changes in the repository</h3>
+<ul>
+<li>New: <code>ghidra/pseudocode/</code> (21 files), <code>ghidra/evidence.tsv</code>, <code>tools/rea_session.mjs</code>, <code>tools/strs.py</code>, and this page.</li>
+<li>Changed: <code>flowlite/flowlite.py</code> (77 lines), <code>flowlite/receipts/flowlite_injected.log</code>, <code>flowlite/receipts/target.png</code> (cropped to 656 × 189 px), <code>wispr-flow-teardown.html</code> (new section 7), <code>DEVELOPMENT-JOURNEY.html</code> (new section 17), <code>index.html</code>.</li>
+<li>No secret values from Wispr's files are in the pseudocode or on these pages.</li>
+</ul>
+
+<h2 id="flowlite">9. The flowlite rebuild and its tests</h2>
+<p>flowlite is a Python script, so it has no build step. "Rebuilt" means that I changed <a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/flowlite/flowlite.py"><code>flowlite/flowlite.py</code></a> and ran the tests again, in the same commit, <code>0f18137</code>.</p>
+<p>New parts of the code:</p>
+<ul>
+<li><code>foreground_process()</code> reads the name of the focused app through Windows calls (<code>GetForegroundWindow</code>, <code>GetWindowThreadProcessId</code>, <code>OpenProcess</code>, <code>QueryFullProcessImageNameW</code>).</li>
+<li><code>SHIFT_INSERT_APPS = {"code", "cursor", "windsurf"}</code> and <code>pick_keys()</code> choose the paste keys.</li>
+<li><code>SLOW_RESTORE</code> and <code>restore_delay()</code> choose the restore delay from the start of the process name.</li>
+<li><code>selftest()</code> holds the checks for these rules.</li>
+</ul>
+<p>Test results:</p>
+<div class="wrap"><table>
+<tr><th>Test</th><th>Result</th><th>What it covers</th></tr>
+<tr><td><code>python flowlite.py --selftest</code></td><td><code>selftest ok</code></td><td>The key choice for each app, and the 0.5 s, 3 s and 5 s delays. This is the only check of the Shift+Insert branch and of the 3 s and 5 s delays.</td></tr>
+<tr><td><code>python flowlite.py --test test.wav</code></td><td><code>Let's meet at 6 p.m. on Thursday to review the quarterly report.</code></td><td>Transcription only</td></tr>
+<tr><td><code>flowlite/receipts/driver.py</code>, inject mode</td><td><code>foreground_is_target: true</code>; the test window got <code>"Let's meet at 6 p.m. on Thursday to review the quarterly report. "</code>; <code>clipboard_restored: true</code>; log <code>5.1s audio, 0.92s ASR, python -&gt; ctrl+v, restore 0.5s</code></td><td>The full path from audio to pasted text. The test window is a <code>python</code> process, so only the Ctrl+V branch ran.</td></tr>
+<tr><td>Live voice</td><td>Not done</td><td>—</td></tr>
+</table></div>
+
+<h2 id="open">10. Open items</h2>
+<ul>
+<li><b>Not decompiled:</b> the keyboard hook, the privilege check <code>FUN_140322010</code>, the HTML conversion <code>FUN_1403274e0</code>, and the UI Automation text reading.</li>
+<li><b>Not known:</b> the live flag values. Only a runtime capture of the server's flags could show them.</li>
+<li><b>Not tested:</b> flowlite with a live voice, and the Shift+Insert branch in a real editor.</li>
+<li><b>Claude Code:</b> restart it so that the REA MCP tools see Ghidra.</li>
+<li><b>Old Ghidra process</b> from 2026-10-10: still running; it is yours to stop.</li>
+<li><b>Receipt file:</b> <code>flowlite/receipts/driver.py</code> still contains the name of the test PC's audio device.</li>
+<li><b>Other engines:</b> IDA and Hopper are still not set up. Hopper cannot be installed on Windows through REA.</li>
+</ul>
+
+<h2 id="functions">11. The 21 functions</h2>
+<p>Each name is <span class="tag i">INFERRED</span> from the log strings in the function. Each link opens the pseudocode file on GitHub.</p>
+<div class="wrap"><table>
+<tr><th>Name (inferred)</th><th>Ghidra function</th><th>REA Evidence ID</th></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/PasteText_FUN_140325210.c">PasteText</a></td><td><code>FUN_140325210</code></td><td><code>ev_dcadbc2da87cdcb9accca51a40f30008d8d196253852aa77184a1638cccaa035</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/PasteTextInternal_FUN_140325ec0.c">PasteTextInternal</a></td><td><code>FUN_140325ec0</code></td><td><code>ev_5c80d4f5a8f7c23b962cff65491a5e63fb84f67b399c62c0720dee817050a0f8</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/PasteRegular_FUN_1403259d0.c">PasteRegular</a></td><td><code>FUN_1403259d0</code></td><td><code>ev_3107c101e2232fe2554dfcc240e802a5558dd60f3fea6860fb11c20c9e2487af</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/SimulatePaste_FUN_140324cc0.c">SimulatePaste</a></td><td><code>FUN_140324cc0</code></td><td><code>ev_1e82ad9e36f4d70d5a77d3d00242672b8fbf172a0052f21f82ca4582d4d60620</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/SendMultipleKeyEvents_FUN_140322420.c">SendMultipleKeyEvents</a></td><td><code>FUN_140322420</code></td><td><code>ev_e4cf49c4216da88aec83106d51c761f9adf73d1e071f9e55c2eb2a2eabccbe23</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/SendMaskingSequence_FUN_140323170.c">SendMaskingSequence</a></td><td><code>FUN_140323170</code></td><td><code>ev_0b7f777d818d6fe2903427fc9f6443018cd48532f5ee8e191b008ddb6fa75d70</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/SimulateTab_FUN_140325720.c">SimulateTab</a></td><td><code>FUN_140325720</code></td><td><code>ev_fa8232b713df8387028f5ca726685cdb5e1d1f876825cd623a26474b0259991f</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/Sleep_FUN_14016a3e0.c">Sleep</a></td><td><code>FUN_14016a3e0</code></td><td><code>ev_a6c8afed1703f254b9ac1f108d1612d31b0bbea3614d471ff39f8ba8f9b4c19c</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/CopyWithFormatting_FUN_140326e60.c">CopyWithFormatting</a></td><td><code>FUN_140326e60</code></td><td><code>ev_8dc21b58ac38790f87852027f56292372a67e0787af469efc26e6cb35c2c6395</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/RestoreAfterPaste_FUN_140326b76.c">RestoreAfterPaste</a></td><td><code>FUN_140326b76</code></td><td><code>ev_d010683ff6d1d581c03156211d5146324e007f004bfeac7bb7dd8dbf8ed81311</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/RestoreDelayMs_FUN_140318380.c">RestoreDelayMs</a></td><td><code>FUN_140318380</code></td><td><code>ev_0a153dd50f3f4cdf8c2a0a51144ffa243c9091b31399482590a78bb3e1207250</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/FailureTimeoutMs_FUN_1403183f0.c">FailureTimeoutMs</a></td><td><code>FUN_1403183f0</code></td><td><code>ev_9caad8a7122a8f59c1e9718e8fc9db0387bf82c6e5ed019983639c6bfd572b2d</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/ProcessPrefixMatch_FUN_140318320.c">ProcessPrefixMatch</a></td><td><code>FUN_140318320</code></td><td><code>ev_db2a095a44aa4e31510f8a32a5da2e0f271ffb1094e32c6cb7e7a8ce5e071893</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/RestoreDelayAppLists_FUN_140318450.c">RestoreDelayAppLists</a></td><td><code>FUN_140318450</code></td><td><code>ev_953a27683c90b4a9fa3f3796ac1966cbea44565e888a45efead90f64fc84ca01</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/ForegroundAppInit_FUN_140409240.c">ForegroundAppInit</a></td><td><code>FUN_140409240</code></td><td><code>ev_62474b466f60f64b3f6de80945d4f4bc7ac6681ebda6c61d262fa9dad7b55600</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/CapturePasteTarget_FUN_1403196b0.c">CapturePasteTarget</a></td><td><code>FUN_1403196b0</code></td><td><code>ev_2e36ae139aa1308f38ee98ac2eb7b38e5ccdb8aa4dceff278c8a3dfa210f2e30</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/LoadDelayedClipboard_FUN_1403186e0.c">LoadDelayedClipboard</a></td><td><code>FUN_1403186e0</code></td><td><code>ev_d0d08a755fa52ab537fdde28e664d4cfeff4d52b61ce876f16b8ad5c18893605</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/DelayedRenderWndProc_FUN_140319890.c">DelayedRenderWndProc</a></td><td><code>FUN_140319890</code></td><td><code>ev_485e2d7d7c324d5656a3de994bd8d7f1e2c7e2303b167b8d827e1a5150bf1198</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/ScheduleRestore_FUN_140319cf0.c">ScheduleRestore</a></td><td><code>FUN_140319cf0</code></td><td><code>ev_0d0ff5eb9ff59fc4ce85c2e039072540d5ff7d2949101ee95163098ed30f76d3</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/ClipboardReadTimeout_FUN_140411990.c">ClipboardReadTimeout</a></td><td><code>FUN_140411990</code></td><td><code>ev_f382f1ce023ca79de30a20a4f5905b4c72e3ccc5932d5f581d63a3ef559b6545</code></td></tr>
+<tr><td><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/ghidra/pseudocode/ClipboardFormatLists_FUN_140327960.c">ClipboardFormatLists</a></td><td><code>FUN_140327960</code></td><td><code>ev_7ccd18a16a303acd80a19274017a1575d560de2869a3ac246a297bf4c2fa9aaf</code></td></tr>
+</table></div>
+
+<h2 id="where">12. Where each fact is recorded</h2>
+<div class="wrap"><table>
+<tr><th>Fact</th><th>This page</th><th><a href="wispr-flow-teardown.html#ghidra">Teardown §7</a></th><th><a href="DEVELOPMENT-JOURNEY.html">Journey §17</a></th><th><a href="index.html">Index</a></th></tr>
+<tr><td>Why no engine ran at first</td><td>§2 (full)</td><td>§1 (short)</td><td>yes</td><td>no</td></tr>
+<tr><td>Setup, time limit, <code>rea_session.mjs</code></td><td>§4</td><td>yes</td><td>yes</td><td>no</td></tr>
+<tr><td>1,310 s analysis, 56,803 functions</td><td>§3, §4</td><td>yes</td><td>1,310 s only</td><td>no</td></tr>
+<tr><td>12-byte string method</td><td>§5</td><td>yes</td><td>yes</td><td>no</td></tr>
+<tr><td>Proven paste rules</td><td>§6</td><td>yes</td><td>summary</td><td>as flowlite limits</td></tr>
+<tr><td>Inferred and hidden</td><td>§7</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><td>Consequences (before and after)</td><td>§8</td><td>no</td><td>no</td><td>no</td></tr>
+<tr><td>flowlite changes and tests</td><td>§9</td><td>no</td><td>yes</td><td>run steps and limits</td></tr>
+<tr><td>Functions with Evidence IDs</td><td>§11</td><td>yes</td><td>no</td><td>no</td></tr>
+</table></div>
+<p class="muted">Sources for section 2: REA 6.3.0 repository documents <code>docs/installation.md</code>, <code>docs/windows-ghidra-p0.md</code> and <code>docs/ghidra-nativeaot.md</code>, and the REA skill <code>reverse-engineer-anything</code>.</p>
+</main>
+</body>
+</html>

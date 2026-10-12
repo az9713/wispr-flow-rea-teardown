@@ -35,6 +35,7 @@ th{background:#16213a;color:var(--text)}
 <p class="muted">Static analysis of Wispr Flow 1.6.1102 on Windows, and flowlite: a small local rebuild. 2026-10-11.</p>
 <p class="muted">Reference: the video <a href="https://www.youtube.com/watch?v=FnB9tHKBJXQ" style="color:var(--acc2)">“How To Use REA To Clone Any Software In Minutes”</a> by Eric Tech.</p>
 <div class="card"><h3><a href="wispr-flow-teardown.html" style="color:var(--acc2)">Teardown report</a></h3><p>How Wispr Flow captures speech, gets transcription from its servers, and pastes text into other apps. Each claim is marked proven, inferred, or hidden. <a href="wispr-flow-teardown.html#ghidra" style="color:var(--acc2)">Section 7</a> reads the helper's paste code with Ghidra.</p></div>
+<div class="card"><h3><a href="ghidra-pass.html" style="color:var(--acc2)">The Ghidra pass</a></h3><p>Why Ghidra did not run at the start, its role, what it proved in the helper, the consequences for the findings and for flowlite, and the open items.</p></div>
 <div class="card"><h3><a href="DEVELOPMENT-JOURNEY.html" style="color:var(--acc2)">Development journey</a></h3><p>The full session record: how REA was used and where it failed, every error, the rebuild, and the test receipts.</p></div>
 <div class="card"><h3>Code and receipts</h3><ul>
 <li><a href="https://github.com/az9713/wispr-flow-rea-teardown/blob/main/flowlite/flowlite.py" style="color:var(--acc2)">flowlite/flowlite.py</a>: hold F9, speak, release; text is pasted into the focused app.</li>

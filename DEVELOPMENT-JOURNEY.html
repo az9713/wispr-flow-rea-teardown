@@ -582,6 +582,7 @@ th{background:#16213a;color:var(--text)}
 4. <strong>Check the paste.</strong> Add a UI Automation read-back, as Wispr's <code>DictatedTextVerification</code> does.
 5. <strong>Read the helper.</strong> Done in section 17.</p>
 <h2>17. Second pass: redoing the helper with Ghidra (2026-10-11)</h2>
+<p>See also <a href="ghidra-pass.html">the Ghidra pass page</a>: why Ghidra did not run at the start, its role, and the consequences.</p>
 <p><strong>Why it happened.</strong> The user asked which REA engine read Wispr Flow: Hopper, IDA, or Ghidra. The answer was none. The JavaScript part needs no disassembler; REA reads it with <code>analyze_javascript_application</code>. The helper is machine code, and no disassembler was set up. <code>rea doctor</code> reported all three as <code>missing_analysis_engine</code>: Ghidra <code>GHIDRA_INSTALL_DIR is not set</code>, IDA <code>IDA MCP registration is not configured.</code>, Hopper not installed. The first report blamed the MCP timeouts only; the missing engine was the real blocker, and I had not checked it. The user then wrote "do all these steps and use Ghidra to redo the teardown and rebuild the app", and then "in short, redo everything with Gihdra".</p>
 
 <p><strong>Install.</strong></p>
